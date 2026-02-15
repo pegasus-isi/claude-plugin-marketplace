@@ -1,0 +1,25 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "scitech",
+  "version": "0.0.0",
+  "description": "Pegasus related Claude plugins for Claude",
+  "owner": {
+    "name": "Pegasus",
+    "email": "pegasus-support@isi.edu"
+  },
+  "plugins": [
+    {
+      "name": "pegasus-dev",
+      "description": "A Claude plugin for software development on SciTech projects.",
+      "version": "0.0.0",
+      "author": {
+        "name": "Rajiv Mayani",
+        "email": "mayani@isi.edu"
+      },
+      "source": "./plugins/pegasus-dev",
+      "category": "development",
+      "homepage": "https://scitech.group",
+      "tags": ["pegasus", "pegasus-ai", "workflow"]
+    }
+  ]
+}
