@@ -2,8 +2,8 @@
   <img width="50%" alt="scitech-claude-code-plugin-marketplace" src="https://github.com/user-attachments/assets/8e229427-3bbe-4cc1-83fb-d109db278f1f" />
 </p>
 
-![License](https://img.shields.io/pypi/l/kiso.svg?logo=apache&color=blue&label=License)
-![Contributors](https://img.shields.io/github/contributors-anon/pegasus-isi/kiso?color=green&label=Contributors)
+![License](https://img.shields.io/github/license/pegasus-isi/claude-plugin-marketplace.svg?logo=apache&color=blue&label=License)
+![Contributors](https://img.shields.io/github/contributors-anon/pegasus-isi/claude-plugin-marketplace?color=green&label=Contributors)
 
 ## Usage
 
