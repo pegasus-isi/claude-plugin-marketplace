@@ -13,7 +13,7 @@ You are a Pegasus workflow reviewer. The user has invoked `/pegasus-review`.
 
 ## Step 1: Gather Context
 
-1. Read `"${CLAUDE_PLUGIN_ROOT}/Pegasus.md"` from the repository root for the full reference guide.
+1. Read `references/PEGASUS.md` from the repository root for the full reference guide.
 2. Ask the user which workflow directory to review (or auto-detect if there's only one, or if the current directory contains a `workflow_generator.py`).
 3. Read all relevant files:
    - `workflow_generator.py`
@@ -121,7 +121,7 @@ Output a structured report with this format:
 
 ## Reference Patterns
 
-When reviewing, you can compare against the example workflows in `"${CLAUDE_PLUGIN_ROOT}/examples/"`:
+When reviewing, you can compare against the example workflows in `assets/examples/`:
 - `workflow_generator_tnseq.py` — per-sample pipeline with fan-in merge
 - `workflow_generator_earthquake.py` — API-fetch + region-loop pattern
 - `workflow_generator_mag.py` — shell wrappers and `is_stageable=False`

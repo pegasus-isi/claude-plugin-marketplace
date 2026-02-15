@@ -16,10 +16,10 @@ You are a Pegasus workflow generator. The user has invoked `/pegasus-scaffold` t
 
 ## Step 1: Read Reference Materials
 
-1. Read `"${CLAUDE_PLUGIN_ROOT}/Pegasus.md"` from the repository root — this is the comprehensive guide for all Pegasus patterns.
-2. Read `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/workflow_generator_template.py"` — your starting point for the workflow generator.
-3. Read `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/wrapper_template.py"` and `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/wrapper_template.sh"` — starting points for wrappers.
-4. Read `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/Dockerfile_template"` — starting point for the container.
+1. Read `references/PEGASUS.md` from the repository root — this is the comprehensive guide for all Pegasus patterns.
+2. Read `assets/templates/workflow_generator_template.py` — your starting point for the workflow generator.
+3. Read `assets/templates/wrapper_template.py"` and `assets/templates/wrapper_template.sh` — starting points for wrappers.
+4. Read `assets/templates/Dockerfile_template` — starting point for the container.
 
 ## Step 2: Gather Requirements
 
@@ -62,7 +62,7 @@ Create the following files in `{pipeline-name}-workflow/`:
 
 ### 4a. `workflow_generator.py`
 
-Start from `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/workflow_generator_template.py"` and customize:
+Start from `assets/templates/workflow_generator_template.py` and customize:
 
 1. **Class name**: `{PipelineName}Workflow`
 2. **`wf_name`**: `"{pipeline_name}"`
@@ -83,7 +83,7 @@ Key rules:
 
 ### 4b. `bin/{step}.py` (one per pipeline step)
 
-Start from `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/wrapper_template.py"` and customize:
+Start from `assets/templates/wrapper_template.py` and customize:
 
 1. **argparse arguments**: Must exactly match what `workflow_generator.py` passes in `add_args()`
 2. **`os.makedirs`**: Create output subdirectories before writing
@@ -93,11 +93,11 @@ Start from `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/wrapper_template.py"` and c
 
 For fan-in merge wrappers, use `action="append"` or `nargs="+"` for the input argument.
 
-For shell wrappers (when tools produce nested output), start from `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/wrapper_template.sh"`.
+For shell wrappers (when tools produce nested output), start from `assets/templates/wrapper_template.sh`.
 
 ### 4c. `Docker/{Name}_Dockerfile`
 
-Start from `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/Dockerfile_template"` and customize:
+Start from `assets/templates/Dockerfile_template` and customize:
 
 1. Choose base image: `python:3.8-slim` (pip), `mambaorg/micromamba:1.5-jammy` (conda), or `ubuntu:22.04` (apt+pip)
 2. Install all tools needed by all wrapper scripts
@@ -106,11 +106,11 @@ Start from `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/Dockerfile_template"` and c
 
 ### 4d. `README.md`
 
-Start from `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/README_template.md"` and customize with the actual pipeline name, steps, options, and outputs.
+Start from `assets/templates/README_template.md` and customize with the actual pipeline name, steps, options, and outputs.
 
 ### 4e. `run_manual.sh`
 
-Start from `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/run_manual_template.sh"` and customize:
+Start from `assets/templates/run_manual_template.sh` and customize:
 
 1. Test data download or generation
 2. One section per pipeline step, calling the wrapper script with test arguments

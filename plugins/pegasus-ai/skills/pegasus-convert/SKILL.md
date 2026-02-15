@@ -16,9 +16,9 @@ You are a pipeline conversion specialist. The user has invoked `/pegasus-convert
 
 ## Step 1: Read Reference Materials
 
-1. Read `"${CLAUDE_PLUGIN_ROOT}/Pegasus.md"` from the repository root — especially the "Converting Snakemake to Pegasus" section.
-2. Read `${CLAUDE_PLUGIN_ROOT}/pegasus-templates/workflow_generator_template.py"` — your target format.
-3. Read `${CLAUDE_PLUGIN_ROOT}/examples/workflow_generator_tnseq.py"` — this was converted from the chienlab-tnseq Snakemake pipeline and is the best real-world conversion example. Full repo: https://github.com/pegasus-isi/tnseq-workflow
+1. Read `references/PEGASUS.md` from the repository root — especially the "Converting Snakemake to Pegasus" section.
+2. Read `assets/templates/workflow_generator_template.py` — your target format.
+3. Read `assets/examples/workflow_generator_tnseq.py` — this was converted from the chienlab-tnseq Snakemake pipeline and is the best real-world conversion example. Full repo: https://github.com/pegasus-isi/tnseq-workflow
 
 ## Step 2: Read the Source Pipeline
 
@@ -30,7 +30,7 @@ Read all source files thoroughly before starting the conversion.
 
 ## Step 3: Map Concepts
 
-Apply these mappings from "${CLAUDE_PLUGIN_ROOT}/Pegasus.md":
+Apply these mappings from references/PEGASUS.md:
 
 ### Snakemake → Pegasus
 
@@ -101,7 +101,7 @@ Also create:
 
 ### 4e. Handle Common Conversion Pitfalls
 
-From "${CLAUDE_PLUGIN_ROOT}/Pegasus.md" "Common Conversion Pitfalls":
+From references/PEGASUS.md "Common Conversion Pitfalls":
 
 1. **Rules that call scripts directly** (`Rscript {input.script}`) → register the script in the Replica Catalog and add as a job input
 2. **`params.data_dir` patterns** that scan directories → rewrite to pass explicit file lists

@@ -15,8 +15,8 @@ You are a Pegasus container image generator. The user has invoked `/pegasus-dock
 
 ## Step 1: Read Reference Materials
 
-1. Read `"${CLAUDE_PLUGIN_ROOT}/Pegasus.md"` from the repository root — especially the "Docker Container" and "Micromamba Containers" sections.
-2. Read `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/Dockerfile_template"` for the three base image patterns.
+1. Read `references/PEGASUS.md` from the repository root — especially the "Docker Container" and "Micromamba Containers" sections.
+2. Read `assets/templates/Dockerfile_template` for the three base image patterns.
 
 ## Step 2: Gather Requirements
 
@@ -41,14 +41,14 @@ Based on user answers, read the closest existing example:
 
 | Pattern | Reference |
 |---------|-----------|
-| Simple Python/data science (pip) | `"${CLAUDE_PLUGIN_ROOT}/examples/Dockerfile_pip_example"` |
-| Complex bioinformatics (micromamba) | `"${CLAUDE_PLUGIN_ROOT}/examples/Dockerfile_micromamba_example"` |
+| Simple Python/data science (pip) | `assets/examples/Dockerfile_pip_example` |
+| Complex bioinformatics (micromamba) | `assets/examples/Dockerfile_micromamba_example` |
 
 Read the selected reference before generating.
 
 ## Step 4: Generate the Dockerfile
 
-Start from `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/Dockerfile_template"` and customize:
+Start from `assets/templates/Dockerfile_template` and customize:
 
 ### For pip-based (Option A or C):
 

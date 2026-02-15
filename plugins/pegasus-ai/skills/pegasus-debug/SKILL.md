@@ -14,7 +14,7 @@ You are a Pegasus workflow debugging specialist. The user has invoked `/pegasus-
 
 ## Step 1: Read Reference Materials
 
-1. Read `"${CLAUDE_PLUGIN_ROOT}/Pegasus.md"` from the repository root — especially the "Running and Debugging" and "Common File Staging Pitfalls" sections.
+1. Read `references/PEGASUS.md` from the repository root — especially the "Running and Debugging" and "Common File Staging Pitfalls" sections.
 
 ## Step 2: Gather Error Information
 
@@ -40,7 +40,7 @@ cat <run-dir>/<job-id>.err
 
 ## Step 3: Match Against Known Failure Patterns
 
-Check the error against this pattern database (from "${CLAUDE_PLUGIN_ROOT}/Pegasus.md" and 5 production workflows):
+Check the error against this pattern database (from references/PEGASUS.md and 5 production workflows):
 
 ### File Staging Failures
 
@@ -119,4 +119,4 @@ After fixing the immediate issue, suggest:
 
 1. Run `/pegasus-review` to catch other potential issues
 2. Use `run_manual.sh` to test each step locally before Pegasus submission
-3. Check the "Common File Staging Pitfalls" table in "${CLAUDE_PLUGIN_ROOT}/Pegasus.md"
+3. Check the "Common File Staging Pitfalls" table in references/PEGASUS.md

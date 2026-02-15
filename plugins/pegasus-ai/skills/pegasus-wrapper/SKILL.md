@@ -15,8 +15,8 @@ You are a Pegasus wrapper script generator. The user has invoked `/pegasus-wrapp
 
 ## Step 1: Read Reference Materials
 
-1. Read `"${CLAUDE_PLUGIN_ROOT}/Pegasus.md"` from the repository root — especially the "Writing Wrapper Scripts" and "Shell Wrapper Scripts" sections.
-2. Read `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/wrapper_template.py"` and `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/wrapper_template.sh"` as starting points.
+1. Read `references/PEGASUS.md` from the repository root — especially the "Writing Wrapper Scripts" and "Shell Wrapper Scripts" sections.
+2. Read `assets/templates/wrapper_template.py"` and `assets/templates/wrapper_template.sh` as starting points.
 
 ## Step 2: Gather Requirements
 
@@ -49,7 +49,7 @@ Read the selected reference before generating code.
 
 ### For Python wrappers:
 
-Start from `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/wrapper_template.py"` and customize:
+Start from `assets/templates/wrapper_template.py` and customize:
 
 1. **Docstring**: Describe what this step does
 2. **argparse arguments**: Must match what the `workflow_generator.py` will pass via `add_args()`
@@ -61,7 +61,7 @@ Start from `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/wrapper_template.py"` and c
 
 ### For shell wrappers:
 
-Start from `"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/wrapper_template.sh"` and customize:
+Start from `assets/templates/wrapper_template.sh` and customize:
 
 1. **`set -euo pipefail`**: Always include
 2. **Argument parsing**: `case` statement to extract named arguments

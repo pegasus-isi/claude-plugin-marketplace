@@ -9,7 +9,7 @@
 #
 # References:
 #   - mag-workflow/bin/megahit.sh — output flattening pattern
-#   - Pegasus.md "Shell Wrapper Scripts" section
+#   - references/PEGASUS.md "Shell Wrapper Scripts" section
 #
 # This wrapper is registered in the Transformation Catalog. Its arguments
 # must match what workflow_generator.py passes in add_args().

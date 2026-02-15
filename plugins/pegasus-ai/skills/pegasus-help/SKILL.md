@@ -24,13 +24,13 @@ Display the following navigation table so the user knows which skill to use:
 
 ## Reference Materials
 
-- **`"${CLAUDE_PLUGIN_ROOT}/Pegasus.md"`** (in repo root) — Comprehensive guide covering all Pegasus concepts, patterns, and pitfalls
-- **`"${CLAUDE_PLUGIN_ROOT}/pegasus-templates/"`** — Copy-paste-and-customize starting points for all file types
-- **`"${CLAUDE_PLUGIN_ROOT}/examples/`** — Curated reference files from 5 production workflows
+- **`references/PEGASUS.md`** (in repo root) — Comprehensive guide covering all Pegasus concepts, patterns, and pitfalls
+- **`assets/templates/`** — Copy-paste-and-customize starting points for all file types
+- **`assets/examples/`** — Curated reference files from 5 production workflows
 
 ## Example Workflows
 
-These production workflows are included in `"${CLAUDE_PLUGIN_ROOT}/examples/"` and available as full repositories:
+These production workflows are included in `assets/examples/` and available as full repositories:
 
 | Example | Key Patterns | Full Repository |
 |---------|-------------|-----------------|
