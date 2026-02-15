@@ -20,6 +20,19 @@
       "category": "development",
       "homepage": "https://scitech.group",
       "tags": ["pegasus", "pegasus-ai", "workflow"]
+    },
+    {
+      "name": "pegasus-ai",
+      "description": "A plugin for creating Pegasus WMS workflows with Claude Code.",
+      "version": "0.0.0",
+      "author": {
+        "name": "Komal Thareja",
+        "email": "kthare10@renci.org"
+      },
+      "source": "./plugins/pegasus-ai",
+      "category": "development",
+      "homepage": "https://pegasusai.io/",
+      "tags": ["pegasus", "pegasus-ai", "workflow"]
     }
   ]
 }
