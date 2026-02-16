@@ -1,8 +1,9 @@
 {
-  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "scitech",
-  "version": "0.0.0",
-  "description": "Pegasus related Claude plugins for Claude",
+  "metadata": {
+    "version": "0.0.0",
+    "description": "Pegasus related Claude plugins for Claude"
+  },
   "owner": {
     "name": "Pegasus",
     "email": "pegasus-support@isi.edu"
