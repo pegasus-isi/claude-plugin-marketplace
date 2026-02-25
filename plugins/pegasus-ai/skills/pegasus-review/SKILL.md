@@ -37,6 +37,7 @@ Evaluate the workflow against each category below. For each item, report one of:
 - [ ] Support files (R scripts, JARs, config files) are NOT in the Transformation Catalog — they belong in the Replica Catalog
 - [ ] Container image string is well-formed (`docker://user/image:tag`)
 - [ ] Memory and cores are set appropriately per tool (check against `TOOL_CONFIGS` if present)
+- [ ] External data directories (caches, databases, model weights) use CondorIO `transfer_input_files` on the Transformation — NOT container `mounts=[]`. Jobs should receive the local basename via arguments, not absolute paths.
 
 ### Category 2: Replica Catalog Correctness
 

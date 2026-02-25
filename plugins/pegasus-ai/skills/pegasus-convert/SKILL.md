@@ -60,6 +60,7 @@ Apply these mappings from references/PEGASUS.md:
 | Channel operations | Python loops and list operations |
 | `params.x` | `argparse` argument |
 | Container directive | `Container()` in transformation catalog |
+| Shared filesystem cache/DB mounts | CondorIO `transfer_input_files` on `Transformation` (NOT container `mounts=[]`) |
 
 ## Step 4: Conversion Process
 
@@ -108,6 +109,7 @@ From references/PEGASUS.md "Common Conversion Pitfalls":
 3. **Shell pipes** (`cmd1 | cmd2 > output`) → work inside wrapper scripts via `subprocess.run(cmd, shell=True)`
 4. **`rule all`** → no equivalent needed; Pegasus runs all jobs
 5. **Dynamic file lists** (`glob_wildcards()`) → resolve at workflow generation time, not inside jobs
+6. **Shared filesystem caches/databases** (mounted paths in Nextflow/Snakemake) → use CondorIO `transfer_input_files` on the Transformation, pass `os.path.basename()` to wrapper scripts. Do NOT use container `mounts=[]`. See Pegasus.md "Transferring Data Directories via CondorIO".
 
 ## Step 5: Validation
 

@@ -125,6 +125,8 @@ container = Container(
 )
 ```
 
+> **Note on container mounts:** Avoid using the `mounts=` parameter to bind-mount shared filesystem paths into containers. Instead, use CondorIO (`transfer_input_files`) to transfer data directories to jobs — see [Transferring Data Directories via CondorIO](#transferring-data-directories-via-condorio).
+
 ### Transformation Registration
 
 ```python
@@ -561,6 +563,8 @@ tc = TransformationCatalog()
 tx = Transformation("name", site="condorpool", pfn="/path/to/script.py",
                     is_stageable=True, container=container)
 tx.add_pegasus_profile(memory="4 GB", cores=2)
+# Transfer external data directories via CondorIO (preferred over container mounts)
+tx.add_profiles(Namespace.CONDOR, key="transfer_input_files", value="/path/to/cache_dir")
 tc.add_containers(container)
 tc.add_transformations(tx)
 
@@ -669,6 +673,72 @@ tx = Transformation(
 ```dockerfile
 COPY bin/*.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/*.sh
+```
+
+### Transferring Data Directories via CondorIO
+
+When jobs need access to external data directories (model caches, databases, reference collections), **prefer HTCondor's `transfer_input_files`** over container bind mounts. This is the recommended approach because it works on any HTCondor pool without requiring a shared filesystem.
+
+**Pattern: Add `transfer_input_files` on the Transformation, pass local basename to wrapper:**
+
+```python
+# Container — no mounts needed
+container = Container(
+    "my_container",
+    container_type=Container.SINGULARITY,
+    image="docker://username/image:latest",
+    image_site="docker_hub",
+    arguments="--nv",       # GPU flags if needed, but NO mounts=[]
+)
+
+# Transformation — HTCondor transfers the directory to each job
+my_step = Transformation(
+    "my_step",
+    site=exec_site_name,
+    pfn=os.path.join(self.wf_dir, "bin/my_step.py"),
+    is_stageable=True,
+    container=container,
+).add_pegasus_profile(
+    memory="30 GB", cores=1, gpus=1,
+).add_profiles(
+    Namespace.CONDOR,
+    key="transfer_input_files",
+    value=args.cache_dir,          # Absolute path on submit host
+)
+
+# Job — pass the LOCAL basename (not the absolute path)
+job = (
+    Job("my_step", _id="step_1")
+    .add_args(
+        "--input", input_file,
+        "--cache-dir", os.path.basename(args.cache_dir.rstrip("/")),
+    )
+    .add_inputs(input_file)
+    .add_outputs(output_file, stage_out=True, register_replica=False)
+)
+```
+
+**How it works:**
+1. HTCondor recursively transfers the directory (files and subdirectories) to the job's scratch space before execution
+2. The directory appears in the working directory under its basename (e.g., `/shared/colabfold_cache` → `colabfold_cache/`)
+3. The wrapper script receives the local basename via `--cache-dir` and the underlying tool reads from the local copy
+
+**When to use CondorIO vs other approaches:**
+
+| Approach | When to use |
+|----------|-------------|
+| **CondorIO `transfer_input_files`** (preferred) | Caches, model weights, databases — any external directory a job needs read access to |
+| **Container `mounts=[]`** (avoid) | Only when CondorIO is not possible (extremely large databases 100+ GB where transfer per job is impractical) |
+| **Pegasus `File()` objects** | Individual files that flow between jobs (standard inputs/outputs) |
+| **Replica Catalog** | Input data files and support scripts (R scripts, JARs) |
+
+**Wrapper script — no changes needed.** The wrapper receives a local path via its `--cache-dir` argument and passes it to the underlying tool. The same wrapper works whether the cache was transferred by HTCondor or is on a shared filesystem:
+
+```python
+parser.add_argument("--cache-dir", required=True,
+                    help="Cache directory (local path in job working directory)")
+# ...
+cmd = ["mytool", "--data", args.cache_dir, ...]
 ```
 
 ### Per-Tool Resource Configuration
