@@ -119,5 +119,8 @@ container = Container(
     container_type=Container.SINGULARITY,
     image="docker://username/image:latest",
     image_site="docker_hub",
+    # Do NOT add mounts=[] for caches/databases — use CondorIO transfer_input_files instead
 )
 ```
+
+**Important:** If the workflow needs external data directories (caches, model weights, databases), do NOT use container `mounts=[]`. Instead, use CondorIO `transfer_input_files` on the Transformation. See Pegasus.md "Transferring Data Directories via CondorIO".

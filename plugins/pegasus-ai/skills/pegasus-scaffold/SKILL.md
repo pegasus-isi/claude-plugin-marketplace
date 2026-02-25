@@ -39,8 +39,11 @@ Ask the user the following questions. If they've already provided some answers i
 5. **Tools needed**: List all command-line tools or Python libraries each step uses
 6. **ML component?**: Does the pipeline include model training and/or inference?
    - If yes: train-once-predict-many (hub-and-spoke) or train-per-item?
-7. **Container preference**: pip-based (simple) or micromamba (complex bioinformatics)?
-8. **Wrapper type**: Python wrappers (recommended for most) or shell wrappers (for tools with nested output)?
+7. **External data directories?**: Does the pipeline need access to external data directories at runtime (model caches, databases, reference collections)?
+   - If yes → use CondorIO (`transfer_input_files`) to transfer them to jobs (see Pegasus.md "Transferring Data Directories via CondorIO")
+   - Do NOT use container `mounts=[]` for this — CondorIO is preferred
+8. **Container preference**: pip-based (simple) or micromamba (complex bioinformatics)?
+9. **Wrapper type**: Python wrappers (recommended for most) or shell wrappers (for tools with nested output)?
 
 ## Step 3: Select Reference Workflow
 
@@ -53,6 +56,7 @@ Based on the user's answers, select the closest existing workflow as a reference
 | Shell wrappers, micromamba, `--test` mode | `examples/workflow_generator_mag.py` |
 | ML train-then-predict | `examples/workflow_generator_soilmoisture.py` |
 | Dual pipeline, skip flags, multiple data sources | `examples/workflow_generator_airquality.py` |
+| CondorIO for caches/databases, GPU jobs, batch inference | See Pegasus.md "Transferring Data Directories via CondorIO" |
 
 Read the selected reference workflow before generating code.
 
@@ -80,6 +84,7 @@ Key rules:
 - Job `_id` must be unique — use `f"{step}_{item}"` pattern
 - File objects must be shared between producer and consumer jobs (same Python object, not just same string)
 - For fan-in merge steps, collect output files in a list and pass to a merge job via `add_inputs(*files)`
+- For external data directories (caches, databases), use CondorIO `transfer_input_files` on the Transformation — do NOT use container `mounts=[]`. Pass `os.path.basename()` of the directory to wrapper scripts.
 
 ### 4b. `bin/{step}.py` (one per pipeline step)
 
