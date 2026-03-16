@@ -23,6 +23,36 @@
       "tags": ["pegasus", "pegasus-ai", "workflow"]
     },
     {
+      "name": "impeccable",
+      "description": "Design vocabulary and skills for frontend development. Includes 20 commands (/polish, /distill, /audit, /typeset, /overdrive, etc.) and an enhanced frontend-design skill with curated anti-patterns.",
+      "version": "1.5.0",
+      "author": {
+        "name": "Paul Bakaus",
+        "email": "paul@paulbakaus.com"
+      },
+      "source": {
+        "url": "https://github.com/paulbakaus/impeccable"
+      },
+      "category": "design",
+      "homepage": "https://impeccable.style",
+      "tags": ["design", "frontend", "ui", "ux", "skills", "commands"]
+    },
+    {
+      "name": "nano-banana",
+      "description": "Nano Banana image generation. Use when user asks to generate an image, create an image, make an image, or mentions nano banana. Supports Gemini Flash, Pro, and Nano Banana 2 models.",
+      "version": "0.0.0",
+      "author": {
+        "name": "Ronnie Miller",
+        "email": "hello@buildatscale.tv"
+      },
+      "source": {
+        "url": "https://github.com/buildatscale-tv/claude-code-plugins/blob/main/plugins/nano-banana"
+      },
+      "category": "design",
+      "homepage": "https://github.com/buildatscale-tv/claude-code-plugins",
+      "tags": ["image", "nano-banana", "design", "ai"]
+    },
+    {
       "name": "pegasus-ai",
       "description": "A plugin for creating Pegasus WMS workflows with Claude Code.",
       "version": "0.0.0",
