@@ -63,6 +63,8 @@ Add the following to your `.claude/settings.json` file:
 |--------|-------------|
 | [pegasus-dev](https://github.com/pegasus-isi/claude-plugin-marketplace/tree/main/plugins/pegasus-dev) | Skills and tools for developing software on SciTech projects — git workflows, code review, commit conventions, and project-specific best practices. |
 | [pegasus-ai](https://github.com/pegasus-isi/claude-plugin-marketplace/tree/main/plugins/pegasus-ai) | Workflow authoring for Pegasus WMS — generate `workflow.yml` files, experiment configs, and scaffold scientific pipelines with Claude. |
+| [impeccable](https://impeccable.style) | Design vocabulary and skills for frontend development. Includes 20 commands (/polish, /distill, /audit, /typeset, /overdrive, etc.) and an enhanced frontend-design skill with curated anti-patterns. |
+| [nano-banana](https://github.com/buildatscale-tv/claude-code-plugins) | Nano Banana image generation supporting Gemini Flash, Pro, and Nano Banana 2 models. |
 
 ## Contributing
 

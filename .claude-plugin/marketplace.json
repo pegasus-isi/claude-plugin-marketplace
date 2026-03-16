@@ -31,7 +31,9 @@
         "email": "paul@paulbakaus.com"
       },
       "source": {
-        "url": "https://github.com/paulbakaus/impeccable"
+        "github": {
+          "repo": "paulbakaus/impeccable"
+        }
       },
       "category": "design",
       "homepage": "https://impeccable.style",
@@ -46,7 +48,10 @@
         "email": "hello@buildatscale.tv"
       },
       "source": {
-        "url": "https://github.com/buildatscale-tv/claude-code-plugins/blob/main/plugins/nano-banana"
+        "github": {
+          "repo": "buildatscale-tv/claude-code-plugins",
+          "path": "plugins/nano-banana"
+        }
       },
       "category": "design",
       "homepage": "https://github.com/buildatscale-tv/claude-code-plugins",
