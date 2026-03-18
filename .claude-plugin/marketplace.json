@@ -39,23 +39,6 @@
       "tags": ["design", "frontend", "ui", "ux", "skills", "commands"]
     },
     {
-      "name": "nano-banana",
-      "description": "Nano Banana image generation. Use when user asks to generate an image, create an image, make an image, or mentions nano banana. Supports Gemini Flash, Pro, and Nano Banana 2 models.",
-      "version": "0.0.0",
-      "author": {
-        "name": "Ronnie Miller",
-        "email": "hello@buildatscale.tv"
-      },
-      "source": {
-        "source": "github",
-        "repo": "buildatscale-tv/claude-code-plugins",
-        "path": "plugins/nano-banana"
-      },
-      "category": "design",
-      "homepage": "https://github.com/buildatscale-tv/claude-code-plugins",
-      "tags": ["image", "nano-banana", "design", "ai"]
-    },
-    {
       "name": "pegasus-ai",
       "description": "A plugin for creating Pegasus WMS workflows with Claude Code.",
       "version": "0.0.0",
