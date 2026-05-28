@@ -18,7 +18,8 @@ You are a pipeline conversion specialist. The user has invoked `/pegasus-convert
 
 1. Read `references/PEGASUS.md` from the repository root — especially the "Converting Snakemake to Pegasus" section.
 2. Read `assets/templates/workflow_generator_template.py` — your target format.
-3. Read `assets/examples/workflow_generator_tnseq.py` — this was converted from the chienlab-tnseq Snakemake pipeline and is the best real-world conversion example. Full repo: https://github.com/pegasus-isi/tnseq-workflow
+3. For **Snakemake** conversions: Read `assets/examples/workflow_generator_tnseq.py` — converted from the chienlab-tnseq Snakemake pipeline. Full repo: https://github.com/pegasus-isi/tnseq-workflow
+4. For **Nextflow** conversions: Read `assets/examples/workflow_generator_rnaseq.py` — converted from a Nextflow DSL2 pipeline with R support files and fan-in merge. Full repo: https://github.com/pegasus-isi/rnaseq-workflow
 
 ## Step 2: Read the Source Pipeline
 
@@ -136,5 +137,6 @@ Snakemake rule: align          →  Wrapper: bin/align.py
 
 ## Full Workflow Repositories
 
-- https://github.com/pegasus-isi/tnseq-workflow — converted from Snakemake (best conversion reference)
+- https://github.com/pegasus-isi/tnseq-workflow — converted from Snakemake (best Snakemake conversion reference)
+- https://github.com/pegasus-isi/rnaseq-workflow — converted from Nextflow DSL2 (best Nextflow conversion reference, R support files, fan-in)
 - https://github.com/pegasus-isi/mag-workflow — inspired by nf-core/mag Nextflow pipeline
