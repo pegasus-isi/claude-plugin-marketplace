@@ -126,7 +126,15 @@ When reviewing, you can compare against the example workflows in `assets/example
 - `workflow_generator_tnseq.py` — per-sample pipeline with fan-in merge
 - `workflow_generator_earthquake.py` — API-fetch + region-loop pattern
 - `workflow_generator_mag.py` — shell wrappers and `is_stageable=False`
+- `workflow_generator_soilmoisture.py` — ML train-then-predict
 - `workflow_generator_airquality.py` — dual pipeline, skip flags, merge
+- `workflow_generator_gwas_qc.py` — fork-join topology, PLINK bioinformatics
+- `workflow_generator_rnaseq.py` — Nextflow conversion, R support files
+- `workflow_generator_proteinfold.py` — GPU protein folding, CondorIO caches
+- `workflow_generator_s2_segmentation.py` — image tiling, split-merge, GPU U-Net
+- `workflow_generator_medical_imaging_fl.py` — federated learning with SubWorkflows
+- `workflow_generator_obs_harvest.py` — time-window splitting, parallel data harvesting
+- `workflow_generator_sra_search.py` — hierarchical merge tree, DAGMan rate limiting
 
 Full repositories for deeper comparison:
 - https://github.com/pegasus-isi/tnseq-workflow
@@ -134,3 +142,12 @@ Full repositories for deeper comparison:
 - https://github.com/pegasus-isi/mag-workflow
 - https://github.com/pegasus-isi/soilmoisture-workflow
 - https://github.com/pegasus-isi/airquality-workflow
+- https://github.com/pegasus-isi/crophealth-workflow
+- https://github.com/pegasus-isi/gwas-qc-workflow
+- https://github.com/pegasus-isi/orcasound-workflow
+- https://github.com/pegasus-isi/rnaseq-workflow
+- https://github.com/pegasus-isi/proteinfold-workflow
+- https://github.com/kthare10/s2-segmentation-workflow
+- https://github.com/pegasus-isi/medical-imaging-fl-workflow
+- https://github.com/swarm-workflows/obs-harvest-workflow
+- https://github.com/pegasus-isi/sra-search-pegasus-workflow

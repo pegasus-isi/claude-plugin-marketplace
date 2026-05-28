@@ -56,7 +56,13 @@ Based on the user's answers, select the closest existing workflow as a reference
 | Shell wrappers, micromamba, `--test` mode | `examples/workflow_generator_mag.py` |
 | ML train-then-predict | `examples/workflow_generator_soilmoisture.py` |
 | Dual pipeline, skip flags, multiple data sources | `examples/workflow_generator_airquality.py` |
-| CondorIO for caches/databases, GPU jobs, batch inference | See Pegasus.md "Transferring Data Directories via CondorIO" |
+| Fork-join topology, complex branching, PLINK bioinformatics | `examples/workflow_generator_gwas_qc.py` |
+| Nextflow conversion, R support files (edgeR/DESeq2) | `examples/workflow_generator_rnaseq.py` |
+| CondorIO for caches/databases, GPU jobs, batch inference | `examples/workflow_generator_proteinfold.py` + Pegasus.md "Transferring Data Directories via CondorIO" |
+| Image tiling, split→parallel→merge, GPU U-Net training | `examples/workflow_generator_s2_segmentation.py` |
+| Federated learning with SubWorkflows, FL rounds as sub-DAGs | `examples/workflow_generator_medical_imaging_fl.py` + `examples/fl_round.py` |
+| Time-window splitting, parallel observation data harvesting | `examples/workflow_generator_obs_harvest.py` |
+| Hierarchical merge tree, DAGMan rate limiting, inline submit | `examples/workflow_generator_sra_search.py` |
 
 Read the selected reference workflow before generating code.
 
@@ -141,8 +147,17 @@ Before presenting the generated code to the user, verify:
 ## Full Workflow Repositories
 
 For complete working examples beyond the excerpts in `examples/`:
-- https://github.com/pegasus-isi/tnseq-workflow
-- https://github.com/pegasus-isi/earthquake-workflow
-- https://github.com/pegasus-isi/mag-workflow
-- https://github.com/pegasus-isi/soilmoisture-workflow
-- https://github.com/pegasus-isi/airquality-workflow
+- https://github.com/pegasus-isi/tnseq-workflow — per-sample bioinformatics, fan-in merge
+- https://github.com/pegasus-isi/earthquake-workflow — API data fetch, per-region loops
+- https://github.com/pegasus-isi/mag-workflow — shell wrappers, micromamba, metagenomics
+- https://github.com/pegasus-isi/soilmoisture-workflow — ML train-then-predict
+- https://github.com/pegasus-isi/airquality-workflow — dual pipeline, LSTM forecasting
+- https://github.com/pegasus-isi/crophealth-workflow — CNN classification, edge-to-cloud DPU
+- https://github.com/pegasus-isi/gwas-qc-workflow — fork-join GWAS QC, PLINK
+- https://github.com/pegasus-isi/orcasound-workflow — S3 audio data, per-sensor parallelism
+- https://github.com/pegasus-isi/rnaseq-workflow — Nextflow conversion, RNA-Seq, R support files
+- https://github.com/pegasus-isi/proteinfold-workflow — GPU protein folding, CondorIO for model caches
+- https://github.com/kthare10/s2-segmentation-workflow — Sentinel-2 image tiling, GPU U-Net training
+- https://github.com/pegasus-isi/medical-imaging-fl-workflow — federated learning with SubWorkflows
+- https://github.com/swarm-workflows/obs-harvest-workflow — parallel observation data harvesting
+- https://github.com/pegasus-isi/sra-search-pegasus-workflow — hierarchical merge tree, DAGMan rate limiting
