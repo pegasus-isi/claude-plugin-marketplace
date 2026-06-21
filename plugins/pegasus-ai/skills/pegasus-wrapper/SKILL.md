@@ -96,6 +96,6 @@ For complete wrapper scripts beyond the examples:
 - https://github.com/pegasus-isi/gwas-qc-workflow (PLINK subprocess wrappers, fork-join)
 - https://github.com/pegasus-isi/rnaseq-workflow (R script integration, fan-in wrappers)
 - https://github.com/pegasus-isi/proteinfold-workflow (GPU wrappers, CondorIO for model caches)
-- https://github.com/kthare10/s2-segmentation-workflow (image tiling/split-merge wrappers)
+- https://github.com/pegasus-isi/s2-segmentation-workflow (image tiling/split-merge wrappers)
 - https://github.com/pegasus-isi/medical-imaging-fl-workflow (FL round wrappers, SubWorkflows)
 - https://github.com/pegasus-isi/sra-search-pegasus-workflow (hierarchical merge wrappers, shell scripts)
