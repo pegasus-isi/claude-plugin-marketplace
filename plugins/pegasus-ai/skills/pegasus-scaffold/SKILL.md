@@ -157,7 +157,7 @@ For complete working examples beyond the excerpts in `examples/`:
 - https://github.com/pegasus-isi/orcasound-workflow — S3 audio data, per-sensor parallelism
 - https://github.com/pegasus-isi/rnaseq-workflow — Nextflow conversion, RNA-Seq, R support files
 - https://github.com/pegasus-isi/proteinfold-workflow — GPU protein folding, CondorIO for model caches
-- https://github.com/kthare10/s2-segmentation-workflow — Sentinel-2 image tiling, GPU U-Net training
+- https://github.com/pegasus-isi/s2-segmentation-workflow — Sentinel-2 image tiling, GPU U-Net training
 - https://github.com/pegasus-isi/medical-imaging-fl-workflow — federated learning with SubWorkflows
 - https://github.com/swarm-workflows/obs-harvest-workflow — parallel observation data harvesting
 - https://github.com/pegasus-isi/sra-search-pegasus-workflow — hierarchical merge tree, DAGMan rate limiting

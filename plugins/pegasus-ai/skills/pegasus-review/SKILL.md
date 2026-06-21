@@ -147,7 +147,7 @@ Full repositories for deeper comparison:
 - https://github.com/pegasus-isi/orcasound-workflow
 - https://github.com/pegasus-isi/rnaseq-workflow
 - https://github.com/pegasus-isi/proteinfold-workflow
-- https://github.com/kthare10/s2-segmentation-workflow
+- https://github.com/pegasus-isi/s2-segmentation-workflow
 - https://github.com/pegasus-isi/medical-imaging-fl-workflow
 - https://github.com/swarm-workflows/obs-harvest-workflow
 - https://github.com/pegasus-isi/sra-search-pegasus-workflow
