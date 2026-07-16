@@ -1,8 +1,8 @@
 ---
 name: Bug report
-about: Report an bug with any of the plugins
+about: Report a bug with any of the plugins
 title: ''
-labels: bug
+type: bug
 assignees: ''
 ---
 

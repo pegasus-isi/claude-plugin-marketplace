@@ -2,7 +2,7 @@
 name: Feature request
 about: Suggest a new Plugin, Command, Skill, Hook, or Agent.
 title: ''
-labels: ''
+type: feature
 assignees: ''
 ---
 
