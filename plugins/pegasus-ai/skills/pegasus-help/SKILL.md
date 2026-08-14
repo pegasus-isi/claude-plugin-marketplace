@@ -15,9 +15,9 @@ Display the following navigation table so the user knows which skill to use:
 
 | Skill | When to Use | What It Does |
 |-------|-------------|--------------|
-| `/pegasus-scaffold` | Starting a new workflow from scratch | Generates a complete project: `workflow_generator.py`, wrapper scripts, Dockerfile, README, and manual test script |
+| `/pegasus-scaffold` | Starting a new workflow from scratch | Generates a complete project: `workflow_generator.py`, wrapper scripts, Apptainer definition file, README, and manual test script |
 | `/pegasus-wrapper` | Adding a single pipeline step | Generates a Python or shell wrapper script for one tool |
-| `/pegasus-dockerfile` | Building the container image | Generates a Dockerfile for your workflow's tool stack |
+| `/pegasus-apptainer` | Building the container image | Generates an Apptainer `.def` file for your workflow's tool stack |
 | `/pegasus-convert` | Migrating from Snakemake or Nextflow | Converts an existing pipeline definition to Pegasus |
 | `/pegasus-debug` | Workflow failed and you need help | Diagnoses failures from Pegasus error logs and proposes fixes |
 | `/pegasus-review` | Workflow is written but untested | Reviews a workflow for common pitfalls and best practices |

@@ -1,0 +1,31 @@
+Bootstrap: docker
+From: python:3.8.12-slim
+
+%post
+    # Install system dependencies
+    apt-get update && \
+        apt-get install -y git wget curl openssh-client build-essential
+    rm -rf /var/lib/apt/lists/*
+
+    # Install Python dependencies
+    pip install --no-cache-dir \
+        pandas \
+        numpy \
+        matplotlib \
+        scipy \
+        requests \
+        scikit-learn \
+        pytz
+
+    # Create output directory
+    mkdir -p /app/output
+
+%environment
+    # Set Python to not buffer output
+    export PYTHONUNBUFFERED=1
+
+%runscript
+    exec /bin/bash "$@"
+
+%labels
+    maintainer Pegasus Workflow

@@ -26,8 +26,8 @@ my-workflow/
 │   ├── step1.py                # [description] wrapper
 │   ├── step2.py                # [description] wrapper
 │   └── step3.py                # [description] wrapper
-├── Docker/
-│   └── My_Dockerfile           # Container with all required tools
+├── Apptainer/
+│   └── My_Container.def        # Container definition with all required tools
 ├── data/
 │   └── test/                   # Test input data
 └── README.md
@@ -38,16 +38,18 @@ my-workflow/
 - [Pegasus WMS](https://pegasus.isi.edu/) >= 5.0
 - [HTCondor](https://htcondor.org/) >= 10.2
 - Python 3.8+
-- Docker or Singularity (for container execution)
+- [Apptainer](https://apptainer.org/) (for container execution)
 
 ## Setup
 
-### 1. Build the Docker Container
+### 1. Build the Apptainer Container
 
 ```bash
 cd my-workflow
-docker build -t username/image:latest -f Docker/My_Dockerfile .
+apptainer build My_Container.sif Apptainer/My_Container.def
 ```
+
+Update the `image=` path in `workflow_generator.py`'s `Container()` definition to point at the built `.sif` file's absolute path.
 
 ### 2. Prepare Input Data
 

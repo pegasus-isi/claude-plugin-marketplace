@@ -18,7 +18,7 @@ You are a Pegasus workflow reviewer. The user has invoked `/pegasus-review`.
 3. Read all relevant files:
    - `workflow_generator.py`
    - All files in `bin/` (wrapper scripts)
-   - `Docker/*` (Dockerfile)
+   - `Apptainer/*` (`.def` file)
    - `README.md` (if it exists)
    - `run_manual.sh` (if it exists)
 
@@ -35,7 +35,7 @@ Evaluate the workflow against each category below. For each item, report one of:
 - [ ] Every wrapper script referenced in `Transformation(pfn=...)` exists at that path
 - [ ] `is_stageable=True` for scripts on the submit host; `is_stageable=False` for scripts baked into the container
 - [ ] Support files (R scripts, JARs, config files) are NOT in the Transformation Catalog — they belong in the Replica Catalog
-- [ ] Container image string is well-formed (`docker://user/image:tag`)
+- [ ] Container image string is well-formed (`file:///absolute/path/to/image.sif`, with matching `image_site`)
 - [ ] Memory and cores are set appropriately per tool (check against `TOOL_CONFIGS` if present)
 - [ ] External data directories (caches, databases, model weights) use CondorIO `transfer_input_files` on the Transformation — NOT container `mounts=[]`. Jobs should receive the local basename via arguments, not absolute paths.
 
@@ -78,13 +78,14 @@ For each wrapper script, verify:
 - [ ] CPU cores match what the tool actually uses (e.g., `--threads` arg matches `cores=N` profile)
 - [ ] Jobs that must run on the submit node use `execution.site=local` profile
 
-### Category 7: Dockerfile
+### Category 7: Apptainer Definition File
 
 - [ ] All tools referenced by wrapper scripts are installed in the container
-- [ ] `PYTHONUNBUFFERED=1` is set (ensures logs appear in real time)
-- [ ] If using `is_stageable=False`, wrapper scripts are `COPY`ed into the container and `chmod +x`
+- [ ] `PYTHONUNBUFFERED=1` is set in `%environment` (ensures logs appear in real time)
+- [ ] If using `is_stageable=False`, wrapper scripts are copied in via a `%files` section and `chmod +x`ed in `%post`
 - [ ] Base image is appropriate (python-slim for simple, micromamba for complex bioinformatics)
 - [ ] Tool versions are pinned for reproducibility
+- [ ] The `.sif` referenced by `Container(image=...)` was rebuilt after the last `.def` change
 
 ### Category 8: CLI and Usability
 

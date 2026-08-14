@@ -114,11 +114,14 @@ class MyWorkflow:
         self.tc = TransformationCatalog()
 
         # Container definition
+        # image points at a local .sif built with `apptainer build` — Pegasus
+        # stages it like any other input file. image_site is the site where the
+        # .sif physically lives (usually "local", the submit host).
         container = Container(
             "my_container",  # [CUSTOMIZE] Container name
             container_type=Container.SINGULARITY,
-            image="docker://username/image:latest",  # [CUSTOMIZE] Image
-            image_site="docker_hub",
+            image="file:///absolute/path/to/My_Container.sif",  # [CUSTOMIZE] Image
+            image_site="local",
         )
 
         # [CUSTOMIZE] Register each wrapper script as a transformation.

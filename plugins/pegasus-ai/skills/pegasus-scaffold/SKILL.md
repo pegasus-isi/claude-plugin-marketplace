@@ -19,7 +19,7 @@ You are a Pegasus workflow generator. The user has invoked `/pegasus-scaffold` t
 1. Read `references/PEGASUS.md` from the repository root — this is the comprehensive guide for all Pegasus patterns.
 2. Read `assets/templates/workflow_generator_template.py` — your starting point for the workflow generator.
 3. Read `assets/templates/wrapper_template.py"` and `assets/templates/wrapper_template.sh` — starting points for wrappers.
-4. Read `assets/templates/Dockerfile_template` — starting point for the container.
+4. Read `assets/templates/Apptainer_template.def` — starting point for the container.
 
 ## Step 2: Gather Requirements
 
@@ -106,14 +106,15 @@ For fan-in merge wrappers, use `action="append"` or `nargs="+"` for the input ar
 
 For shell wrappers (when tools produce nested output), start from `assets/templates/wrapper_template.sh`.
 
-### 4c. `Docker/{Name}_Dockerfile`
+### 4c. `Apptainer/{Name}_Container.def`
 
-Start from `assets/templates/Dockerfile_template` and customize:
+Start from `assets/templates/Apptainer_template.def` and customize:
 
 1. Choose base image: `python:3.8-slim` (pip), `mambaorg/micromamba:1.5-jammy` (conda), or `ubuntu:22.04` (apt+pip)
 2. Install all tools needed by all wrapper scripts
-3. Set `ENV PYTHONUNBUFFERED=1`
-4. If using shell wrappers with `is_stageable=False`, `COPY bin/*.sh /usr/local/bin/` and `chmod +x`
+3. Set `export PYTHONUNBUFFERED=1` in `%environment`
+4. If using shell wrappers with `is_stageable=False`, add a `%files` section (`bin/*.sh /usr/local/bin/`) and `chmod +x` them in `%post`
+5. Build with `apptainer build {Name}_Container.sif Apptainer/{Name}_Container.def` and reference the resulting `.sif` via `file://` in `workflow_generator.py`'s `Container()`
 
 ### 4d. `README.md`
 
@@ -139,7 +140,7 @@ Before presenting the generated code to the user, verify:
 - [ ] **Unique job IDs**: No duplicate `_id` values across all jobs
 - [ ] **Replica Catalog completeness**: All local input files and support scripts are registered
 - [ ] **Wrapper `os.makedirs`**: Any output path with `/` has `os.makedirs` before writing
-- [ ] **Container has all tools**: Every tool called by every wrapper is installed in the Dockerfile
+- [ ] **Container has all tools**: Every tool called by every wrapper is installed via the Apptainer `.def` file
 - [ ] **`--help` works**: `python3 workflow_generator.py --help` would produce useful output
 - [ ] **No directory scanning**: No `glob()`, `os.listdir()`, or `list.files()` between jobs
 - [ ] **Support files use `os.getcwd()`**: Not `__file__`-relative paths

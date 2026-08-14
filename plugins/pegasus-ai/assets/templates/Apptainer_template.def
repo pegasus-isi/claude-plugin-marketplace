@@ -1,0 +1,123 @@
+# =====================================================================
+# Option A: pip-based (simple Python/data science stacks)
+# =====================================================================
+# Use when: tools are available via pip or apt
+# See: earthquake-workflow/Apptainer/Earthquake_Container.def
+#      tnseq-workflow/Apptainer/Tnseq_Container.def
+
+# Bootstrap: docker
+# From: python:3.8-slim
+#
+# %post
+#     # Install system dependencies
+#     apt-get update && \
+#         apt-get install -y --no-install-recommends \
+#             wget curl git
+#             # [CUSTOMIZE] Add apt packages for your tools
+#     rm -rf /var/lib/apt/lists/*
+#
+#     # Install Python dependencies
+#     pip install --no-cache-dir \
+#         pandas \
+#         numpy \
+#         matplotlib \
+#         requests \
+#         scipy \
+#         scikit-learn
+#         # [CUSTOMIZE] Add pip packages for your tools
+#
+# %environment
+#     # Set Python to not buffer output (important for Pegasus log capture)
+#     export PYTHONUNBUFFERED=1
+#
+# %runscript
+#     exec /bin/bash "$@"
+
+
+# =====================================================================
+# Option B: micromamba-based (complex bioinformatics stacks)
+# =====================================================================
+# Use when: tools have conflicting dependencies, need conda/bioconda
+# See: mag-workflow/Apptainer/MAG_Container.def
+
+# Bootstrap: docker
+# From: mambaorg/micromamba:1.5-jammy
+#
+# %post
+#     # %post always runs as root during the build, so no USER switching is
+#     # needed here (unlike the Dockerfile mambaorg pattern) — MAMBA_ROOT_PREFIX
+#     # and friends are already set via the base image's env.
+#
+#     # System dependencies (headless support for GUI tools)
+#     apt-get update && apt-get install -y --no-install-recommends \
+#         wget curl git procps \
+#         xvfb libgl1-mesa-glx libfontconfig1
+#     rm -rf /var/lib/apt/lists/*
+#
+#     # Install all tools in one solver pass
+#     micromamba install -y -n base -c conda-forge -c bioconda \
+#         python=3.8 \
+#         pandas numpy \
+#         # [CUSTOMIZE] Add bioinformatics tools
+#     micromamba clean --all --yes
+#
+#     # [CUSTOMIZE] If embedding wrapper scripts in the container
+#     # (use with is_stageable=False in transformation catalog),
+#     # add a %files section below and chmod them here.
+#     chmod +x /usr/local/bin/*.sh
+#
+# # [CUSTOMIZE] Copies run before %post regardless of file position.
+# %files
+#     bin/*.sh /usr/local/bin/
+#
+# %environment
+#     export PATH="/opt/conda/bin:$PATH"
+#     export LC_ALL=C.UTF-8
+#     export LANG=C.UTF-8
+#
+# %runscript
+#     # Runs inside the activated micromamba base environment
+#     exec micromamba run -n base "$@"
+
+
+# =====================================================================
+# Option C: Ubuntu-based (apt + pip + manual installs)
+# =====================================================================
+# Use when: tools need both apt packages and pip, or manual compilation
+# See: tnseq-workflow/Apptainer/Tnseq_Container.def
+
+Bootstrap: docker
+From: ubuntu:22.04
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update && \
+        apt-get install -y --no-install-recommends \
+            python3 python3-pip \
+            wget curl git
+            # [CUSTOMIZE] Add system packages your tools need
+    rm -rf /var/lib/apt/lists/*
+
+    # [CUSTOMIZE] Install Python packages
+    pip3 install --no-cache-dir \
+        pandas \
+        numpy \
+        matplotlib \
+        requests
+
+    # [CUSTOMIZE] Install tools not available via apt/pip
+    # Example: Install a tool from a release tarball
+    # wget -q https://github.com/org/tool/releases/download/v1.0/tool.tar.gz -O /tmp/tool.tar.gz && \
+    #     tar -xzf /tmp/tool.tar.gz -C /usr/local/bin/ && \
+    #     rm /tmp/tool.tar.gz
+
+    # Ensure python3 is available as python
+    ln -sf /usr/bin/python3 /usr/bin/python
+
+%environment
+    # Set Python to not buffer output (important for Pegasus log capture)
+    export PYTHONUNBUFFERED=1
+
+%runscript
+    exec /bin/bash "$@"

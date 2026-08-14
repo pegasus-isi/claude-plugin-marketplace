@@ -56,9 +56,9 @@ Check the error against this pattern database (from references/PEGASUS.md and 5 
 
 | Error Pattern | Cause | Fix |
 |---------------|-------|-----|
-| `FATAL: Unable to pull container` | Image name typo or network issue | Verify `docker://user/image:tag` is correct and accessible |
-| `command not found` inside container | Tool not installed in container | Add tool to Dockerfile and rebuild |
-| `ModuleNotFoundError` for Python package | Package not in container | Add `pip install` or `micromamba install` to Dockerfile |
+| `FATAL: could not open image` / transfer failure | `.sif` path typo or not accessible from the site | Verify the `file://` path and `image_site` in `Container()` are correct |
+| `command not found` inside container | Tool not installed in container | Add tool to the Apptainer `.def` file and rebuild the `.sif` |
+| `ModuleNotFoundError` for Python package | Package not in container | Add `pip install` or `micromamba install` to the `.def` file's `%post` |
 
 ### Resource Failures
 
@@ -98,7 +98,7 @@ Based on the identified failure pattern, read:
 
 1. The **wrapper script** that failed — check argparse, `os.makedirs`, subprocess calls
 2. The **workflow_generator.py** — check the job's `add_args()`, `add_inputs()`, `add_outputs()`
-3. The **Dockerfile** — check if the tool is installed
+3. The **Apptainer `.def` file** — check if the tool is installed
 4. The **Replica Catalog** entries — check file registrations
 
 ## Step 5: Propose Fix
@@ -109,7 +109,7 @@ Provide a specific, actionable fix:
 2. **Explain why** the error occurred (root cause, not just symptoms)
 3. **Show how to verify** the fix:
    - For argument mismatches: `python3 bin/wrapper.py --help`
-   - For container issues: `docker run --rm image:tag which tool`
+   - For container issues: `apptainer exec image.sif which tool`
    - For file staging: check Replica Catalog entries
    - For the whole workflow: `python3 workflow_generator.py --help`
 

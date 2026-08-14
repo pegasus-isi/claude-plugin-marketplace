@@ -44,7 +44,7 @@ Apply these mappings from references/PEGASUS.md:
 | `{wildcards.sample}` | `for sample in samples:` loop |
 | `expand(...)` | Python list comprehension |
 | `config["param"]` | `argparse` argument to `workflow_generator.py` |
-| `conda: "env.yaml"` | `Dockerfile` with same packages |
+| `conda: "env.yaml"` | Apptainer `.def` file with same packages |
 | `threads: N` | `.add_pegasus_profile(cores=N)` |
 | `resources: mem_mb=N` | `.add_pegasus_profile(memory="N MB")` |
 | `params: data_dir="path"` | Explicit file paths (no directory scanning) |
@@ -97,7 +97,7 @@ For each rule/process, create:
 3. **Job(s)** in the workflow DAG (one per wildcard combination)
 
 Also create:
-- **Dockerfile** with all tools from `conda:` envs or container directives
+- **Apptainer `.def` file** with all tools from `conda:` envs or container directives
 - **`workflow_generator.py`** assembling all pieces together
 - **`README.md`** documenting the converted workflow
 
@@ -121,7 +121,7 @@ After conversion, verify:
 - [ ] All support files are in the Replica Catalog
 - [ ] No directory scanning in wrapper scripts
 - [ ] File I/O matches between wrapper argparse and job add_args()
-- [ ] Dockerfile includes all tools from the original environment
+- [ ] Apptainer `.def` file includes all tools from the original environment
 
 ## Step 6: Show Side-by-Side
 

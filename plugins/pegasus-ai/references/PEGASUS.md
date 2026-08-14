@@ -24,8 +24,8 @@ my-workflow/
 │   ├── step2.py
 │   ├── helper_script.R         # Non-executable support files (R, shell, etc.)
 │   └── tool.jar                # Binary dependencies
-├── Docker/
-│   └── My_Dockerfile           # Container with all required tools
+├── Apptainer/
+│   └── My_Container.def        # Container definition with all required tools
 ├── data/
 │   └── test/                   # Test input data
 ├── references/                 # Reference files (genomes, indices, etc.)
@@ -119,9 +119,9 @@ The Transformation Catalog registers executables and their containers.
 ```python
 container = Container(
     "my_container",
-    container_type=Container.SINGULARITY,    # SINGULARITY or DOCKER
-    image="docker://username/image:latest",
-    image_site="docker_hub",
+    container_type=Container.SINGULARITY,
+    image="file:///absolute/path/to/My_Container.sif",  # built with `apptainer build`
+    image_site="local",   # the site where the .sif file physically lives
 )
 ```
 
@@ -440,27 +440,31 @@ script_path = os.path.join(os.getcwd(), "analysis.R")
 script_path = os.path.join(os.path.dirname(__file__), "analysis.R")
 ```
 
-## Docker Container
+## Apptainer Container
 
-### Dockerfile Template
+### Apptainer Definition File Template
 
-```dockerfile
-FROM ubuntu:22.04
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && \
-    apt-get install -y \
-        python3 python3-pip \
-        tool1 tool2 tool3 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install tools not available via apt
-RUN pip3 install --no-cache-dir some-python-tool==1.2.3
-
-# Ensure python3 is available as python
-RUN ln -sf /usr/bin/python3 /usr/bin/python
 ```
+Bootstrap: docker
+From: ubuntu:22.04
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+
+    apt-get update && \
+        apt-get install -y \
+            python3 python3-pip \
+            tool1 tool2 tool3
+    rm -rf /var/lib/apt/lists/*
+
+    # Install tools not available via apt
+    pip3 install --no-cache-dir some-python-tool==1.2.3
+
+    # Ensure python3 is available as python
+    ln -sf /usr/bin/python3 /usr/bin/python
+```
+
+`Bootstrap: docker` / `From: ubuntu:22.04` pulls and converts the OCI base image directly — no Docker installation is required to build the `.sif`.
 
 ### Container Considerations
 
@@ -469,9 +473,10 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 - Use language runtimes compatible with your support scripts (e.g., R >= 4.2 if using `|>` pipe syntax, or rewrite scripts for base R compatibility)
 - Test the container locally before deploying:
   ```bash
-  docker build -t username/image:latest -f Docker/My_Dockerfile .
-  docker run --rm -it username/image:latest bash
+  apptainer build My_Container.sif Apptainer/My_Container.def
+  apptainer shell My_Container.sif
   ```
+- Reference the built `.sif` from the Transformation Catalog with `image="file:///absolute/path/to/My_Container.sif"` and `image_site="local"` — no registry push/pull needed, Pegasus stages the file like any other input.
 
 ## Converting Snakemake to Pegasus
 
@@ -486,7 +491,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 | `config.yaml` | CLI arguments to `workflow_generator.py` |
 | `{wildcards}` | Loop variables in Python |
 | `expand(...)` | Python list comprehension |
-| Conda `environment.yaml` | `Dockerfile` |
+| Conda `environment.yaml` | Apptainer `.def` file |
 | `threads:` | `.add_pegasus_profile(cores=N)` |
 | `resources: mem_mb=` | `.add_pegasus_profile(memory="N GB")` |
 
@@ -494,7 +499,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 1. **Identify all rules** and their input/output relationships
 2. **Create a wrapper script** for each rule (or group of similar rules)
-3. **Build a Dockerfile** with all tools from the Conda environment
+3. **Build an Apptainer `.def` file** with all tools from the Conda environment
 4. **Map wildcards to loops** — Snakemake `{sample}` wildcards become Python `for sample in samples:` loops
 5. **Register all input files** in the Replica Catalog (reference files, input data, support scripts)
 6. **Define transformations** for each wrapper script
@@ -539,7 +544,7 @@ pegasus-statistics <run-directory>
    - Missing input files → check Replica Catalog entries
    - "No such file or directory" for support scripts → add to Replica Catalog + job inputs
    - Out of memory → increase `memory` in Transformation profile
-   - Container pull failures → verify Docker image name and network access
+   - Container transfer failures → verify the `.sif` file path and `image_site` are correct
 
 ## Reference: Complete Pegasus Python API
 
@@ -556,7 +561,7 @@ site = Site("condorpool").add_condor_profile(universe="vanilla")
 sc.add_sites(site)
 
 # Container
-container = Container("name", Container.SINGULARITY, "docker://img:tag", "docker_hub")
+container = Container("name", Container.SINGULARITY, "file:///path/to/img.sif", "local")
 
 # Transformation Catalog
 tc = TransformationCatalog()
@@ -668,11 +673,14 @@ tx = Transformation(
 )
 ```
 
-**Dockerfile for embedded scripts:**
+**Apptainer definition file for embedded scripts:**
 
-```dockerfile
-COPY bin/*.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/*.sh
+```
+%files
+    bin/*.sh /usr/local/bin/
+
+%post
+    chmod +x /usr/local/bin/*.sh
 ```
 
 ### Transferring Data Directories via CondorIO
@@ -686,8 +694,8 @@ When jobs need access to external data directories (model caches, databases, ref
 container = Container(
     "my_container",
     container_type=Container.SINGULARITY,
-    image="docker://username/image:latest",
-    image_site="docker_hub",
+    image="file:///absolute/path/to/My_Container.sif",
+    image_site="local",
     arguments="--nv",       # GPU flags if needed, but NO mounts=[]
 )
 
@@ -1038,10 +1046,10 @@ else
 fi
 ```
 
-Include `xvfb` in the Dockerfile:
+Include `xvfb` in the Apptainer definition file's `%post`:
 
-```dockerfile
-RUN apt-get install -y xvfb libgl1-mesa-glx libfontconfig1
+```
+apt-get install -y xvfb libgl1-mesa-glx libfontconfig1
 ```
 
 ### Output File Restructuring in Wrappers
@@ -1153,25 +1161,30 @@ if args.data_source == "sage" and not args.skip_forecast:
 
 When a container needs many bioinformatics tools with conflicting Python/library versions, use micromamba instead of pip:
 
-```dockerfile
-FROM mambaorg/micromamba:1.5-jammy
+```
+Bootstrap: docker
+From: mambaorg/micromamba:1.5-jammy
 
-# Single solver resolves all version conflicts
-RUN micromamba install -y -n base -c conda-forge -c bioconda \
-    python=3.8 \
-    fastqc fastp multiqc \
-    megahit spades quast \
-    prodigal metabat2 samtools \
-    checkm2 gtdbtk prokka
+%post
+    # %post always runs as root during the build — no USER switching needed
 
-# System dependencies for headless tools
-USER root
-RUN apt-get update && apt-get install -y xvfb libgl1-mesa-glx && \
+    # System dependencies for headless tools
+    apt-get update && apt-get install -y xvfb libgl1-mesa-glx
     rm -rf /var/lib/apt/lists/*
 
-# Install wrapper scripts
-COPY bin/*.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/*.sh
+    # Single solver resolves all version conflicts
+    micromamba install -y -n base -c conda-forge -c bioconda \
+        python=3.8 \
+        fastqc fastp multiqc \
+        megahit spades quast \
+        prodigal metabat2 samtools \
+        checkm2 gtdbtk prokka
+
+    # Install wrapper scripts (copied in via %files below)
+    chmod +x /usr/local/bin/*.sh
+
+%files
+    bin/*.sh /usr/local/bin/
 ```
 
 Advantages over pip:
@@ -1205,8 +1218,9 @@ logger.info(f"Processed {len(results)} records, output: {args.output}")
 
 Set `PYTHONUNBUFFERED=1` in the container to ensure logs appear in real time:
 
-```dockerfile
-ENV PYTHONUNBUFFERED=1
+```
+%environment
+    export PYTHONUNBUFFERED=1
 ```
 
 ### Pre-Submission Validation
