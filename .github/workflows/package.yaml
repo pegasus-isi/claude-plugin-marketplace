@@ -1,0 +1,53 @@
+name: package
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.14'
+      - run: pip install build
+      - run: python -m build --wheel
+
+      # force-include reads the working tree, not the git index, so an untracked
+      # file in plugins/ would otherwise ship to every installer.
+      - name: Only tracked files may ship
+        run: python scripts/check_wheel_contents.py dist/*.whl
+
+      - name: Smoke test the installed package
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install --quiet dist/*.whl
+          /tmp/smoke/bin/pegasus-ai-knowledge plugins
+          test "$(/tmp/smoke/bin/pegasus-ai-knowledge path)" -ef \
+               "$(/tmp/smoke/bin/pegasus-ai-knowledge marketplace)/plugins/pegasus-ai"
+          seed="$(/tmp/smoke/bin/pegasus-ai-knowledge seed /tmp/seed)"
+          test -f "$seed/known_marketplaces.json"
+          test -d "$seed/marketplaces/scitech/.claude-plugin"
+          python - "$seed" <<'PY'
+          import json, sys
+          from pathlib import Path
+          seed = Path(sys.argv[1])
+          entry = json.loads((seed / "known_marketplaces.json").read_text())
+          name, = entry
+          manifest = json.loads(
+              (seed / "marketplaces" / name / ".claude-plugin" / "marketplace.json").read_text()
+          )
+          # Claude Code enforces that the registration key matches the manifest name.
+          assert manifest["name"] == name, (manifest["name"], name)
+          # Both fields are mandatory; an entry without them is silently skipped.
+          assert entry[name]["installLocation"], entry
+          assert entry[name]["lastUpdated"], entry
+          print(f"seed ok: {name}")
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: wheel
+          path: dist/*.whl

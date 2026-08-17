@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pegasus-ai-knowledge"
+version = "0.0.0"
+description = "The Pegasus AI marketplace tree (skills, agents, templates, examples) as an installable package, for hosts that cannot clone it at runtime"
+readme = "README.md"
+license = { file = "LICENSE.md" }
+requires-python = ">=3.9"
+authors = [{ name = "Pegasus", email = "pegasus-support@isi.edu" }]
+keywords = ["pegasus", "workflows", "claude", "claude-code", "plugin", "skills"]
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Homepage = "https://github.com/pegasus-isi/claude-plugin-marketplace"
+Issues = "https://github.com/pegasus-isi/claude-plugin-marketplace/issues"
+
+[project.scripts]
+pegasus-ai-knowledge = "pegasus_ai_knowledge.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pegasus_ai_knowledge"]
+
+# The marketplace tree lives at the repo root, because that is where Claude Code
+# expects it when this repo is cloned directly. Map it into the package so a
+# `pip install` yields the identical layout under site-packages, and a host that
+# cannot clone at runtime gets the same bytes.
+[tool.hatch.build.targets.wheel.force-include]
+".claude-plugin" = "pegasus_ai_knowledge/marketplace/.claude-plugin"
+"plugins" = "pegasus_ai_knowledge/marketplace/plugins"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/plugins",
+  "/.claude-plugin",
+  "/README.md",
+  "/LICENSE.md",
+  "/COPYRIGHT.md",
+]

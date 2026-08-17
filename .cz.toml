@@ -5,3 +5,7 @@ tag_format = "v$version"
 version_scheme = "semver"
 version = "0.0.0"
 major_version_zero = true
+version_files = [
+    "pyproject.toml:^version",
+    "src/pegasus_ai_knowledge/__init__.py:^__version__",
+]
