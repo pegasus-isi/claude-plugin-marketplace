@@ -68,9 +68,9 @@ When a Pegasus workflow contains hierarchical sub-workflows (e.g., a federated l
 
 | Error Pattern | Cause | Fix |
 |---------------|-------|-----|
-| `FATAL: Unable to pull container` | Image name typo or network issue | Verify `docker://user/image:tag` is correct and accessible |
-| `command not found` inside container | Tool not installed | Add tool to Dockerfile and rebuild |
-| `ModuleNotFoundError` for Python package | Package not in container | Add `pip install` or `micromamba install` to Dockerfile |
+| `FATAL: Unable to pull container` | `.sif` path wrong, or the `Bootstrap` base in the `.def` is unreachable | Verify `image="file:///abs/path/to/X.sif"` and `image_site="local"`; the path must be absolute |
+| `command not found` inside container | Tool not installed | Add the tool to `%post` in the `.def` and rebuild with `apptainer build` |
+| `ModuleNotFoundError` for Python package | Package not in container | Add `pip install` or `micromamba install` to `%post` in the `.def` and rebuild |
 
 ### Resource Failures
 
@@ -109,7 +109,7 @@ When a Pegasus workflow contains hierarchical sub-workflows (e.g., a federated l
 | Error Pattern | Cause | Fix |
 |---------------|-------|-----|
 | Wrapper not found at execution site | `is_stageable=True` but script not on submit host | Check `pfn` path is absolute and correct |
-| Tool not found in container | `is_stageable=False` but tool not COPYed | Add `COPY` and `chmod +x` in Dockerfile |
+| Tool not found in container | `is_stageable=False` but the tool is not in the image | Add it via `%files` / `%post` in the `.def`, `chmod +x`, and rebuild |
 
 ## Verification Commands
 
@@ -121,7 +121,7 @@ python3 bin/wrapper.py --help
 python3 bin/wrapper.py --input test_in.txt --output test_out.txt
 
 # Check container has tools
-docker run --rm image:tag which tool1 tool2
+apptainer exec Apptainer/tools.sif which tool1 tool2
 
 # Check workflow generates
 python3 workflow_generator.py --help
@@ -137,7 +137,7 @@ This agent was used to debug a medical imaging federated learning workflow built
 
 | Problem | Root Cause | Resolution |
 |---------|-----------|------------|
-| Disk space exhaustion during container staging | A 4.1 GB Docker image was duplicated per sub-workflow by the Pegasus data staging mechanism | Set `bypass_staging=True` on the container to prevent redundant copies |
+| Disk space exhaustion during container staging | A 4.1 GB container image was duplicated per sub-workflow by the Pegasus data staging mechanism | Set `bypass_staging=True` on the container to prevent redundant copies |
 | 75 GB scratch accumulation | `cleanup.scope` misconfiguration left intermediate files on disk across sub-workflows | Configured `inplace` cleanup to remove intermediate data as sub-workflows completed |
 | Output directory collisions | Concurrent experiments wrote results to the same output path | Assigned unique per-experiment output directories based on experiment ID |
 | Round YAML file collisions | Parallel experiments generated round configuration files with identical names | Namespaced round YAML files per experiment to avoid overwrites |

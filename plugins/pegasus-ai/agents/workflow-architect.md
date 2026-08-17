@@ -49,8 +49,8 @@ class MyWorkflow:
         self.tc = TransformationCatalog()
         container = Container("my_container",
             container_type=Container.SINGULARITY,
-            image="docker://docker.io/user/image:tag",  # ALWAYS fully qualified: bare library refs (docker://python:3.11) serialize to an invalid docker:/// triple slash
-            image_site="docker_hub")
+            image=f"file://{self.wf_dir}/Apptainer/My_Container.sif",  # built with `apptainer build`; must be an absolute path
+            image_site="local")
         tx = Transformation("step_name",
             site=exec_site_name,
             pfn=os.path.join(self.wf_dir, "bin/step.py"),
@@ -146,14 +146,21 @@ def add_merge_jobs(wf, parents, max_parents=25):
 
 ## Container Support
 
-```python
-# Docker
-container = Container('tools', Container.DOCKER, 'docker://docker.io/user/image:tag')
+Build the image from an Apptainer definition file and reference the resulting
+`.sif` by absolute path. No registry push or pull is involved — Pegasus stages
+the `.sif` like any other input file.
 
-# Singularity/Apptainer (local .sif)
-container = Container('tools', Container.SINGULARITY,
-    f'file://{BASE_DIR}/container/tools.sif', image_site='local')
+```bash
+apptainer build Apptainer/tools.sif Apptainer/tools.def
 ```
+
+```python
+container = Container('tools', Container.SINGULARITY,
+    f'file://{BASE_DIR}/Apptainer/tools.sif', image_site='local')
+```
+
+`Bootstrap: docker` inside the `.def` pulls and converts an OCI base image, so a
+Docker installation is not required to build the container.
 
 Mixed stageability:
 - `is_stageable=True` + `site=exec_site_name`: wrapper scripts staged from submit host into container
