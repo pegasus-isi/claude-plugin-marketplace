@@ -62,7 +62,7 @@ Add the following to your `.claude/settings.json` file:
 | Plugin | Description |
 |--------|-------------|
 | [pegasus-dev](https://github.com/pegasus-isi/claude-plugin-marketplace/tree/main/plugins/pegasus-dev) | Skills and tools for developing software on SciTech projects — git workflows, code review, commit conventions, and project-specific best practices. |
-| [pegasus-ai](https://github.com/pegasus-isi/claude-plugin-marketplace/tree/main/plugins/pegasus-ai) | Workflow authoring for Pegasus WMS — generate `workflow.yml` files, experiment configs, and scaffold scientific pipelines with Claude. |
+| [pegasus-ai](https://github.com/pegasus-isi/claude-plugin-marketplace/tree/main/plugins/pegasus-ai) | Workflow authoring for Pegasus WMS — generate `workflow.yml` files, experiment configs, and scaffold scientific pipelines with Claude, plus specialist subagents for workflow design, data engineering, and failure diagnosis. |
 | [impeccable](https://impeccable.style) | Design vocabulary and skills for frontend development. Includes 20 commands (/polish, /distill, /audit, /typeset, /overdrive, etc.) and an enhanced frontend-design skill with curated anti-patterns. |
 
 ## Contributing
