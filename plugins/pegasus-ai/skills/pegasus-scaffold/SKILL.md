@@ -8,6 +8,15 @@ allowed-tools:
   - Write
   - Edit
   - Bash
+# What a finished workflow must contain. Declared here so a consumer can state
+# it in always-on context without restating it: the requirement stays defined in
+# one place, and a model that never loads this skill still learns of it.
+deliverables:
+  - workflow_generator.py
+  - bin/<one wrapper per step>
+  - Apptainer/<Name>_Container.def
+  - run_manual.sh
+  - README.md
 ---
 
 # Pegasus Workflow Scaffold
