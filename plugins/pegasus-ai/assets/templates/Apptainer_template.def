@@ -9,6 +9,11 @@
 # From: python:3.8-slim
 #
 # %post
+#     # Unprivileged builds emulate root, and apt then fails to drop privileges
+#     # to the _apt user ("setgroups: Operation not permitted"), so every
+#     # download errors. Keeping apt as root avoids the drop entirely. Debian and
+#     # Ubuntu bases only.
+#     printf 'APT::Sandbox::User "root";\n' > /etc/apt/apt.conf.d/00-no-sandbox
 #     # Install system dependencies
 #     apt-get update && \
 #         apt-get install -y --no-install-recommends \
