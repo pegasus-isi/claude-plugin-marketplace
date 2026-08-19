@@ -42,6 +42,23 @@ cat <run-dir>/<job-id>.err
 
 Check the error against this pattern database (from references/PEGASUS.md and 5 production workflows):
 
+### Planning Failures
+
+These come from `pegasus-plan` and appear before any job runs, so there are no
+job logs to read — the evidence is the generator and the catalogs it wrote.
+
+| Error Pattern | Cause | Fix |
+|---------------|-------|-----|
+| `site attribute (CONTAINER_SITE) is a mismatch` then `Unable to select a Physical Filename (PFN) ... for <name>.sif` | `image_site` was never set on `Container()`, so Pegasus emitted its `CONTAINER_SITE` placeholder and no site owns the image | Set `image_site="local"` **as a keyword**. The 4th *positional* parameter of `Container()` is `arguments`, not `image_site` — passing a site name there silently sets `container.arguments` and leaves `image_site` unset, which is what produces this pair of messages |
+| `Can't determine a location to transfer input file for lfn X for job Y` | Nothing in the workflow produces `X` and it is not in the Replica Catalog | Find the job that should output `X`. If the producer is built in a loop, check that `add_jobs()` is called **inside** the loop (see Dependency Failures) |
+| `Unable to add Directory <internal-mount-point ...>` | Two directories of the same type declared for one site in the Site Catalog | Keep one `sharedScratch` and one `localStorage` per site |
+
+A planning error names a *symptom* — the file that cannot be staged, the site
+that does not match. Fix the generator that produced the catalog, then re-run
+`pegasus-plan` and read the result. Do not hand the user an edit and ask them to
+try again: planning is fast and local, so verify it yourself. It is common for
+one planning error to hide another, and a fix that was never planned is a guess.
+
 ### File Staging Failures
 
 | Error Pattern | Cause | Fix |
@@ -83,6 +100,7 @@ Check the error against this pattern database (from references/PEGASUS.md and 5 
 | Job runs before its input is ready | Missing dependency between jobs | Ensure `File` objects are shared between producer `add_outputs()` and consumer `add_inputs()` |
 | Circular dependency error | Circular file references | Check that no file is both input and output of the same job |
 | `mkdir` job not running first | Missing explicit dependency on mkdir | Add `self.wf.add_dependency(mkdir_job, children=[first_job])` |
+| Only the last item of a fan-out is in the DAG, and every earlier item's output has "no location to transfer" | `add_jobs()` called after the loop instead of inside it — the job variables are rebound each pass, so only the final iteration's objects survive to be added | Call `self.wf.add_jobs(...)` inside the loop body, at the point each job is built |
 
 ### Wrapper Script Failures
 
