@@ -105,6 +105,17 @@ From: mambaorg/micromamba:1.5-jammy
 
 ### Key Rules
 
+0. **Keep apt as root, on Debian/Ubuntu bases.** The first line of `%post`:
+
+   ```
+   printf 'APT::Sandbox::User "root";\n' > /etc/apt/apt.conf.d/00-no-sandbox
+   ```
+
+   An unprivileged build emulates root, and apt then cannot drop privileges to
+   the `_apt` user — every download dies with `setgroups: Operation not
+   permitted`. It has to be done here: a bind mount cannot fix it, because the
+   builder will not create a destination that is absent from the container.
+
 1. **All tools in one container**: Pegasus shares a single container across all jobs. Every tool from every wrapper must be installed.
 2. **Pin versions**: Use `tool==1.2.3` (pip) or `tool=1.2.3` (conda) for reproducibility.
 3. **`PYTHONUNBUFFERED=1`**: Always set this in `%environment` so Pegasus captures logs in real time.
@@ -120,6 +131,13 @@ After generating, show the user:
 ```bash
 # Build the .sif image (no root or Docker required)
 apptainer build My_Container.sif Apptainer/My_Container.def
+
+# On a host where you are not root, emulate it. --ignore-fakeroot-command is
+# needed with it: otherwise Apptainer preloads the host's libfakeroot.so into
+# the container, which fails whenever the two glibcs differ (an ubuntu:22.04
+# base on a 24.04 host dies with "GLIBC_2.38 not found" before %post runs).
+apptainer build --fakeroot --ignore-fakeroot-command \
+    My_Container.sif Apptainer/My_Container.def
 
 # Test (interactive shell)
 apptainer shell My_Container.sif
