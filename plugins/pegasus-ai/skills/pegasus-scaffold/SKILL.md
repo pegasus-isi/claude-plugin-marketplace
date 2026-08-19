@@ -134,6 +134,26 @@ Make the script executable: `chmod +x run_manual.sh`
 
 Before presenting the generated code to the user, verify:
 
+**First, that every deliverable is on disk.** Run `ls -R` on the project
+directory and read the listing against this list — do not rely on remembering
+what you wrote:
+
+- [ ] `workflow_generator.py`
+- [ ] `bin/` — one wrapper per pipeline step
+- [ ] `Apptainer/{Name}_Container.def`
+- [ ] `run_manual.sh`, executable
+- [ ] `README.md`
+- [ ] any document the user asked for (a specification, say), inside the project
+      directory rather than beside it
+
+`run_manual.sh` and `README.md` are the two that get skipped when the generator
+and wrappers took a long time to write. A workflow missing them is one nobody
+else can run or understand, so it is not finished. Create what is missing before
+you reply; never describe the workflow as complete while an item is absent, and
+never tell the user to add one themselves.
+
+**Then, that the code is correct:**
+
 - [ ] **File I/O match**: Every `add_args()` filename matches a `File()` LFN, and the wrapper's argparse matches
 - [ ] **Dependency chain**: File objects are shared between producer/consumer jobs (not duplicated)
 - [ ] **stage_out strategy**: Only final outputs have `stage_out=True`
