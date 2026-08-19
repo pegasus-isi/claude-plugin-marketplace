@@ -125,6 +125,14 @@ container = Container(
 )
 ```
 
+> **Pass `image_site` by keyword.** The signature is
+> `Container(name, container_type, image, arguments=None, mounts=None, image_site=None, ...)`,
+> so the 4th *positional* argument is `arguments` — not `image_site`. Supplying a
+> site name positionally sets `container.arguments` to it and leaves `image_site`
+> unset. Nothing errors at generation time; the catalog just gets
+> `container.arguments: <site>`, and planning later fails with a
+> `CONTAINER_SITE` placeholder it cannot resolve.
+
 > **Note on container mounts:** Avoid using the `mounts=` parameter to bind-mount shared filesystem paths into containers. Instead, use CondorIO (`transfer_input_files`) to transfer data directories to jobs — see [Transferring Data Directories via CondorIO](#transferring-data-directories-via-condorio).
 
 ### Transformation Registration

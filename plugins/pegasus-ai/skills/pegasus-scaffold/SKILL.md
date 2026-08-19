@@ -174,6 +174,42 @@ never tell the user to add one themselves.
 - [ ] **No directory scanning**: No `glob()`, `os.listdir()`, or `list.files()` between jobs
 - [ ] **Support files use `os.getcwd()`**: Not `__file__`-relative paths
 
+## Step 6: Plan It
+
+The checklist above is you reading your own code, which is exactly the state of
+mind that wrote the bug. Finish by having the planner read it instead:
+
+```bash
+python3 workflow_generator.py <args>          # writes workflow.yml + the catalogs
+pegasus-plan --dir submit --sites condorpool --output-sites local workflow.yml
+```
+
+Planning is local, takes seconds, needs no container built and no pool running.
+It resolves every file against its producer and every transformation against its
+site, so it catches in one pass what no amount of re-reading does:
+
+- a file consumed by one job and produced by none
+- a fan-out loop that registered only its last iteration
+- a container whose `image_site` never got set
+- a transformation pointing at a site the Site Catalog does not define
+
+Two of those shipped in a real workflow that passed the Step 5 checklist. The
+generator ran, the YAML looked right, every deliverable was on disk, and it could
+not be planned.
+
+**A workflow that has not been planned is not finished.** If the plan fails, fix
+the generator (not the generated YAML — it is overwritten on the next run),
+regenerate, and plan again until it succeeds. Then tell the user it plans, and
+what the DAG contains:
+
+```
+Plans clean: 99 compute jobs (24 subjects x 4 steps + 3 aggregation).
+```
+
+If something genuinely outside the workflow blocks planning — Pegasus not
+installed, an input the user has not supplied yet — say plainly that it is
+unplanned and why, rather than reporting it as done.
+
 ## Full Workflow Repositories
 
 For complete working examples beyond the excerpts in `examples/`:
