@@ -76,6 +76,14 @@ one planning error to hide another, and a fix that was never planned is a guess.
 | `FATAL: could not open image` / transfer failure | `.sif` path typo or not accessible from the site | Verify the `file://` path and `image_site` in `Container()` are correct |
 | `command not found` inside container | Tool not installed in container | Add tool to the Apptainer `.def` file and rebuild the `.sif` |
 | `ModuleNotFoundError` for Python package | Package not in container | Add `pip install` or `micromamba install` to the `.def` file's `%post` |
+| `not a valid squashfs image` / `while parsing squashfs super block` | The `.sif` has no filesystem. The build produced an empty image and reported success — `--fakeroot` is the known cause | Run `apptainer inspect <sif>` on the source: it fails the same way, which locates the problem at the build rather than the transfer. Rebuild without `--fakeroot` and inspect before resubmitting |
+| A staged container of a few hundred KB | Same as above — a real container is tens to hundreds of MB | Check the stage-in log's byte count. `Total N transfers, 385.1 KB transferred` for a job that stages a container is the tell, and it appears before any container error |
+
+Note where these two surface. The error names squashfs and arrives from a worker
+node, so it reads as a staging or filesystem problem; the cause is a build that
+exited 0 on the submit host minutes earlier. `apptainer sif list` will parse the
+broken file and `ls` will show a plausible size — only `apptainer inspect`, or
+opening it, reveals there is nothing inside.
 
 ### Resource Failures
 
