@@ -132,12 +132,12 @@ After generating, show the user:
 # Build the .sif image (no root or Docker required)
 apptainer build My_Container.sif Apptainer/My_Container.def
 
-# On a host where you are not root, emulate it. --ignore-fakeroot-command is
-# needed with it: otherwise Apptainer preloads the host's libfakeroot.so into
-# the container, which fails whenever the two glibcs differ (an ubuntu:22.04
-# base on a 24.04 host dies with "GLIBC_2.38 not found" before %post runs).
-apptainer build --fakeroot --ignore-fakeroot-command \
-    My_Container.sif Apptainer/My_Container.def
+# ALWAYS check the result. `apptainer build` exiting 0 is not evidence that it
+# built anything: it has been observed printing "Build complete" for an image
+# whose filesystem partition is empty. `sif list` still parses that file and
+# `ls` shows a plausible size, so it reaches a worker node before anyone
+# notices, and fails there with "not a valid squashfs image".
+apptainer inspect My_Container.sif
 
 # Test (interactive shell)
 apptainer shell My_Container.sif
@@ -148,6 +148,25 @@ apptainer run My_Container.sif
 # Verify tools are installed
 apptainer exec My_Container.sif which tool1 tool2 tool3
 ```
+
+**Do not add `--fakeroot`.** It is the usual advice for building unprivileged,
+and here it silently produces a container with an empty filesystem. Measured on
+one definition, in one environment, minutes apart:
+
+| Command | Result |
+| --- | --- |
+| `build --fakeroot --ignore-fakeroot-command` | 37,461 bytes, filesystem partition zero-length |
+| `build` | 265 MB, filesystem partition intact |
+
+Both exited 0 and printed `Build complete`. A definition with no `%post` survives
+the flags unharmed, so a quick test will not show the problem — it appears only
+once `%post` installs something. Apptainer's default path builds correctly
+without root, which is why nothing needs emulating.
+
+If a build must run with unusual flags, `apptainer inspect` the result before
+using it. An image that cannot be inspected cannot be run, and finding that out
+locally costs a second; finding it out from a workflow costs a stage-in, a job
+launch, and an error message that names squashfs instead of the build.
 
 There is no push/registry step — the built `.sif` file is used directly from disk.
 
