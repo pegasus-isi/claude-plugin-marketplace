@@ -31,9 +31,17 @@ Ask the user (skip questions they've already answered):
 4. **Do any tools need headless/display support?** (FastQC, QUAST, matplotlib without display)
    - If yes → need `xvfb`, `libgl1-mesa-glx`, `libfontconfig1`
 5. **Preferred base image?**
-   - `python:3.8-slim` — lightweight, pip-only
+   - `python:3.12-slim` — lightweight, pip-only
    - `mambaorg/micromamba:1.5-jammy` — conda solver for complex bioinformatics
-   - `ubuntu:22.04` — apt + pip + manual installs
+   - `ubuntu:24.04` — apt + pip + manual installs
+
+   **Match the build host's distribution where you can.** A base older than the
+   host is the usual source of glibc trouble at build time: `%post` can be handed
+   the host's `libfakeroot.so`, which then fails against the container's older
+   libc (`version 'GLIBC_2.38' not found`) before a single command runs. Matching
+   the host sidesteps that whole class. Ask what the host runs if you do not
+   know; on Ubuntu 24.04 hosts prefer `ubuntu:24.04` and a `python:3.12`-era
+   slim image over the 22.04/3.8 pairings above.
 
 Apptainer bootstraps from these same OCI base images (`Bootstrap: docker` / `From: <image>`) without needing Docker installed anywhere — Apptainer pulls and converts the image itself.
 
@@ -56,7 +64,7 @@ Start from `assets/templates/Apptainer_template.def` and customize:
 
 ```
 Bootstrap: docker
-From: python:3.8-slim   # or ubuntu:22.04
+From: python:3.12-slim   # or ubuntu:24.04 — match the build host
 
 %post
     # System dependencies
@@ -149,19 +157,35 @@ apptainer run My_Container.sif
 apptainer exec My_Container.sif which tool1 tool2 tool3
 ```
 
-**Do not add `--fakeroot`.** It is the usual advice for building unprivileged,
-and here it silently produces a container with an empty filesystem. Measured on
-one definition, in one environment, minutes apart:
+**Use `--ignore-fakeroot-command`, and never `--fakeroot`.** The two read as a
+pair and do opposite things:
+
+```bash
+apptainer build --ignore-fakeroot-command My_Container.sif Apptainer/My_Container.def
+```
+
+Measured on real definitions in one environment:
 
 | Command | Result |
 | --- | --- |
-| `build --fakeroot --ignore-fakeroot-command` | 37,461 bytes, filesystem partition zero-length |
-| `build` | 265 MB, filesystem partition intact |
+| `build --fakeroot --ignore-fakeroot-command` | 37,461 bytes, filesystem partition zero-length, `Build complete`, exit 0 |
+| `build` | `FATAL` in `%post` — `libfakeroot.so` requires `GLIBC_2.38` |
+| `build --ignore-fakeroot-command` | 312 MB, inspects clean, imports work |
 
-Both exited 0 and printed `Build complete`. A definition with no `%post` survives
-the flags unharmed, so a quick test will not show the problem — it appears only
-once `%post` installs something. Apptainer's default path builds correctly
-without root, which is why nothing needs emulating.
+`--fakeroot` is the harmful one: it is the usual advice for building
+unprivileged, and it silently yields an empty filesystem. A definition with no
+`%post` survives it, so a quick test will not show the problem — it appears only
+once `%post` installs something.
+
+`--ignore-fakeroot-command` is the necessary one. Without it Apptainer preloads
+the **host's** `libfakeroot.so` into the container, so any base older than the
+host dies before `%post` starts. Declining that path costs nothing: the kernel's
+root-mapped namespace needs no such library.
+
+One definition cannot settle either question. Both failures depend on the base
+image — the empty-image one hides behind a definition with no `%post`, the glibc
+one hides behind a base as new as the host — so test a flag change against a
+definition that installs something, on a base older than the host.
 
 If a build must run with unusual flags, `apptainer inspect` the result before
 using it. An image that cannot be inspected cannot be run, and finding that out
