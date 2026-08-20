@@ -6,7 +6,7 @@
 #      tnseq-workflow/Apptainer/Tnseq_Container.def
 
 # Bootstrap: docker
-# From: python:3.8-slim
+# From: python:3.12-slim   # match the build host where you can — see below
 #
 # %post
 #     # Unprivileged builds emulate root, and apt then fails to drop privileges
@@ -92,7 +92,11 @@
 # See: tnseq-workflow/Apptainer/Tnseq_Container.def
 
 Bootstrap: docker
-From: ubuntu:22.04
+# Prefer a base matching the build host's distribution. A base older than the
+# host can be handed the host's libfakeroot.so during %post, which then fails
+# against the container's older libc ("version `GLIBC_2.38' not found") before
+# any command runs. On an Ubuntu 24.04 host, use 24.04 here.
+From: ubuntu:24.04
 
 %post
     export DEBIAN_FRONTEND=noninteractive
