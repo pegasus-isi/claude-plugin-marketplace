@@ -15,8 +15,14 @@ You are a Pegasus wrapper script generator. The user has invoked `/pegasus-wrapp
 
 ## Step 1: Read Reference Materials
 
-1. Read `references/PEGASUS.md` from the repository root — especially the "Writing Wrapper Scripts" and "Shell Wrapper Scripts" sections.
-2. Read `assets/templates/wrapper_template.py"` and `assets/templates/wrapper_template.sh` as starting points.
+Paths below are relative to the **`pegasus-ai` plugin directory** (the one holding
+`skills/`, `references/` and `assets/`), not to your working directory. If the
+context you were given does not name it, locate the guide with a glob for
+`**/pegasus-ai/references/PEGASUS.md` and resolve the rest against it. Say so and
+stop if you cannot find them.
+
+1. Read `references/PEGASUS.md` — especially the "Writing Wrapper Scripts" and "Shell Wrapper Scripts" sections.
+2. Read `assets/templates/wrapper_template.py` and `assets/templates/wrapper_template.sh` as starting points.
 
 ## Step 2: Gather Requirements
 

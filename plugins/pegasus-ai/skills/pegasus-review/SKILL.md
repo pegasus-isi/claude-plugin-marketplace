@@ -13,7 +13,12 @@ You are a Pegasus workflow reviewer. The user has invoked `/pegasus-review`.
 
 ## Step 1: Gather Context
 
-1. Read `references/PEGASUS.md` from the repository root for the full reference guide.
+1. Read `references/PEGASUS.md` for the full reference guide. That path is
+   relative to the **`pegasus-ai` plugin directory** (the one holding `skills/`,
+   `references/` and `assets/`), not to your working directory; if the context
+   you were given does not name it, locate the file with a glob for
+   `**/pegasus-ai/references/PEGASUS.md`. Say so and stop if you cannot find it,
+   because the pitfalls this review checks for are defined there.
 2. Ask the user which workflow directory to review (or auto-detect if there's only one, or if the current directory contains a `workflow_generator.py`).
 3. Read all relevant files:
    - `workflow_generator.py`

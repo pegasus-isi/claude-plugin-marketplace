@@ -16,7 +16,13 @@ You are a pipeline conversion specialist. The user has invoked `/pegasus-convert
 
 ## Step 1: Read Reference Materials
 
-1. Read `references/PEGASUS.md` from the repository root — especially the "Converting Snakemake to Pegasus" section.
+Paths below are relative to the **`pegasus-ai` plugin directory** (the one holding
+`skills/`, `references/` and `assets/`), not to your working directory. If the
+context you were given does not name it, locate the guide with a glob for
+`**/pegasus-ai/references/PEGASUS.md` and resolve the rest against it. Say so and
+stop if you cannot find them.
+
+1. Read `references/PEGASUS.md` — especially the "Converting Snakemake to Pegasus" section.
 2. Read `assets/templates/workflow_generator_template.py` — your target format.
 3. For **Snakemake** conversions: Read `assets/examples/workflow_generator_tnseq.py` — converted from the chienlab-tnseq Snakemake pipeline. Full repo: https://github.com/pegasus-isi/tnseq-workflow
 4. For **Nextflow** conversions: Read `assets/examples/workflow_generator_rnaseq.py` — converted from a Nextflow DSL2 pipeline with R support files and fan-in merge. Full repo: https://github.com/pegasus-isi/rnaseq-workflow
