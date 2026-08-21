@@ -24,7 +24,12 @@ Display the following navigation table so the user knows which skill to use:
 
 ## Reference Materials
 
-- **`references/PEGASUS.md`** (in repo root) — Comprehensive guide covering all Pegasus concepts, patterns, and pitfalls
+These live in the **`pegasus-ai` plugin directory** — the one holding `skills/`,
+`references/` and `assets/` — which is not your working directory. If the context
+you were given does not name it, find it with a glob for
+`**/pegasus-ai/references/PEGASUS.md`.
+
+- **`references/PEGASUS.md`** — Comprehensive guide covering all Pegasus concepts, patterns, and pitfalls
 - **`assets/templates/`** — Copy-paste-and-customize starting points for all file types
 - **`assets/examples/`** — Curated reference files from 12 production workflows
 

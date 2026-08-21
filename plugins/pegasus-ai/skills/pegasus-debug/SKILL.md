@@ -14,7 +14,13 @@ You are a Pegasus workflow debugging specialist. The user has invoked `/pegasus-
 
 ## Step 1: Read Reference Materials
 
-1. Read `references/PEGASUS.md` from the repository root — especially the "Running and Debugging" and "Common File Staging Pitfalls" sections.
+The path below is relative to the **`pegasus-ai` plugin directory** (the one
+holding `skills/`, `references/` and `assets/`), not to your working directory.
+If the context you were given does not name it, locate the guide with a glob for
+`**/pegasus-ai/references/PEGASUS.md`. Say so and stop if you cannot find it —
+the error-pattern database in Step 3 is drawn from it.
+
+1. Read `references/PEGASUS.md` — especially the "Running and Debugging" and "Common File Staging Pitfalls" sections.
 
 ## Step 2: Gather Error Information
 

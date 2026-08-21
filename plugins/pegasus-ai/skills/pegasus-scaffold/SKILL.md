@@ -25,9 +25,20 @@ You are a Pegasus workflow generator. The user has invoked `/pegasus-scaffold` t
 
 ## Step 1: Read Reference Materials
 
-1. Read `references/PEGASUS.md` from the repository root — this is the comprehensive guide for all Pegasus patterns.
+Every path below is relative to the **`pegasus-ai` plugin directory** — the one
+containing `skills/`, `references/` and `assets/` — and *not* to your working
+directory. Hosts run this skill from wherever the user is working, so a bare
+`references/PEGASUS.md` will not resolve. If the context you were given names the
+plugin directory, read from there. If it does not, locate the guide with a glob
+for `**/pegasus-ai/references/PEGASUS.md` and resolve the rest against it.
+
+If you cannot find these files, say so and stop. Do not proceed to Step 2:
+without the guide you will re-derive patterns this project has already settled,
+and the container, staging and fan-out conventions below assume you have read it.
+
+1. Read `references/PEGASUS.md` — this is the comprehensive guide for all Pegasus patterns.
 2. Read `assets/templates/workflow_generator_template.py` — your starting point for the workflow generator.
-3. Read `assets/templates/wrapper_template.py"` and `assets/templates/wrapper_template.sh` — starting points for wrappers.
+3. Read `assets/templates/wrapper_template.py` and `assets/templates/wrapper_template.sh` — starting points for wrappers.
 4. Read `assets/templates/Apptainer_template.def` — starting point for the container.
 
 ## Step 2: Gather Requirements
