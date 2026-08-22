@@ -112,6 +112,24 @@ Key rules:
 - For fan-in merge steps, collect output files in a list and pass to a merge job via `add_inputs(*files)`
 - For external data directories (caches, databases), use CondorIO `transfer_input_files` on the Transformation — do NOT use container `mounts=[]`. Pass `os.path.basename()` of the directory to wrapper scripts.
 
+Four errors that each shipped in a real generated workflow, every one in a
+generator written freehand instead of from the template. The template already
+avoids all four — that is the strongest reason to start from it:
+
+- The import is `from Pegasus.api import *`, capital P. `import pegasus` does
+  not exist and dies at line 1 with `ModuleNotFoundError`.
+- Only call methods the Pegasus API defines. The catalogs are write-only
+  builders: `ReplicaCatalog` has `add_replica()` but no `get_replica()`, and
+  `Directory` has no `add_directory()`. When a later job needs a file, keep a
+  reference to your own `File` object — never ask a catalog to hand one back.
+- Add each site to the SiteCatalog exactly once. Build `local` and the exec
+  site, then register both in a single `add_sites(local, exec_site)` call; a
+  second registration of `local` raises `DuplicateError` when the generator
+  runs, not when it is planned.
+- Nothing executes above its definition. The only top-level call is the
+  `if __name__ == "__main__": main()` guard on the last line of the file; a
+  bare `main()` placed above `def main()` dies with `NameError`.
+
 ### 4b. `bin/{step}.py` (one per pipeline step)
 
 Start from `assets/templates/wrapper_template.py` and customize:
@@ -139,6 +157,19 @@ Start from `assets/templates/Apptainer_template.def` and customize:
 ### 4d. `README.md`
 
 Start from `assets/templates/README_template.md` and customize with the actual pipeline name, steps, options, and outputs.
+
+The README must contain the exact generator invocation as a fenced `bash` code
+block — real values, every required argument, runnable by copy-paste:
+
+```bash
+python3 workflow_generator.py --station GHCND:USW00014895 --output workflow.yml
+```
+
+A prose mention ("run `workflow_generator.py` with your station id") is not a
+substitute: the fenced command is what a user copies first, and it is the only
+invocation automated tooling can extract and execute. If the generator has
+required arguments, this line is the difference between a workflow someone can
+run and one they have to reverse-engineer.
 
 ### 4e. `run_manual.sh`
 
@@ -182,6 +213,8 @@ never tell the user to add one themselves.
 - [ ] **Wrapper `os.makedirs`**: Any output path with `/` has `os.makedirs` before writing
 - [ ] **Container has all tools**: Every tool called by every wrapper is installed via the Apptainer `.def` file
 - [ ] **`--help` works**: `python3 workflow_generator.py --help` would produce useful output
+- [ ] **Imports and API calls are real**: `from Pegasus.api import *` (capital P), every method called on a catalog exists in the API (no `get_*` — catalogs are write-only), each site added once, and the only top-level call is the `__main__` guard at the end
+- [ ] **README has the runnable invocation**: the exact generator command, all required arguments filled in, in a fenced `bash` block
 - [ ] **No directory scanning**: No `glob()`, `os.listdir()`, or `list.files()` between jobs
 - [ ] **Support files use `os.getcwd()`**: Not `__file__`-relative paths
 
