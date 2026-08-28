@@ -188,10 +188,19 @@ class MyWorkflow:
         #   jar_path = os.path.join(self.wf_dir, "bin/tool.jar")
         #   self.rc.add_replica("local", "tool.jar", "file://" + jar_path)
         #
-        # Pattern C: No input files — first job fetches from API (earthquake-workflow)
+        # Pattern C: Input is a static file at a URL — register the URL as the
+        # PFN and Pegasus stages it (retries + optional checksum); no fetch job.
+        # See PEGASUS.md "URL Inputs vs Fetch Jobs".
+        #   self.rc.add_replica("web", "observations.csv",
+        #                       "https://data.example.org/observations.csv")
+        #
+        # Pattern D: No input files — data fetched at runtime from an API.
+        # Prefer fetching inside the consuming wrapper when one job needs it;
+        # use a dedicated first fetch job (earthquake-workflow) only for
+        # multi-consumer / multi-source / rate-limited cases.
         #   pass
         #
-        # Pattern D: Config/catalog file generated at workflow creation time (airquality)
+        # Pattern E: Config/catalog file generated at workflow creation time (airquality)
         #   self.rc.add_replica("local", "catalog.csv",
         #                       "file://" + os.path.join(self.wf_dir, "catalog.csv"))
 

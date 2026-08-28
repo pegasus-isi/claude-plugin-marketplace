@@ -49,7 +49,12 @@ Ask the user the following questions. If they've already provided some answers i
 2. **Pipeline steps**: Describe each step in order — what tool does it run, what are its inputs and outputs?
 3. **Data source**: Where does input data come from?
    - Local files (FASTQ, CSV, etc.) — needs Replica Catalog entries
-   - API fetch at runtime (USGS, OpenAQ, etc.) — first job fetches, no RC entries needed
+   - Static file at a URL (https/s3/ftp/…) — register the **URL as the PFN**
+     in the Replica Catalog; Pegasus stages it with retries, **no fetch job**
+     (see PEGASUS.md "URL Inputs vs Fetch Jobs")
+   - API fetch at runtime (USGS, OpenAQ, etc.) — fetch **inside the consuming
+     wrapper** when a single job needs the result; add a dedicated first
+     fetch job only for multi-consumer, multi-source, or rate-limited cases
    - Both (reference files + API data)
 4. **Iteration pattern**: How does the pipeline parallelize?
    - Per-sample (like tnseq: each sample goes through the same pipeline independently)
@@ -98,7 +103,9 @@ Start from `assets/templates/workflow_generator_template.py` and customize:
 2. **`wf_name`**: `"{pipeline_name}"`
 3. **`__init__`**: Add pipeline-specific parameters
 4. **`create_transformation_catalog`**: Register one `Transformation` per wrapper script with appropriate memory/cores
-5. **`create_replica_catalog`**: Register input files (or leave empty for API-fetch patterns)
+5. **`create_replica_catalog`**: Register input files — local paths or direct
+   URLs as PFNs (a URL PFN is staged by Pegasus itself; no fetch job needed) —
+   or leave empty for runtime API-fetch patterns
 6. **`create_workflow`**: Build the DAG with jobs, file objects, and dependencies
 7. **`main()`**: Add pipeline-specific argparse arguments
 8. **Input validation**: Validate required arguments before any Pegasus API calls

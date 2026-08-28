@@ -36,6 +36,16 @@ Ask the user (skip questions they've already answered):
    - Shell (when needed): tools with nested output directories, headless display handling, simple tool chaining
 5. **Does this wrapper need to accept multiple input files?** (For fan-in/merge jobs, use `action="append"` or `nargs="+"`)
 6. **Does this wrapper call support files?** (R scripts, JARs, config files that Pegasus stages into the working directory)
+7. **Does the input come from a URL?**
+   - A **static file at a URL** needs no wrapper code at all — register the URL
+     as the PFN in the Replica Catalog and Pegasus stages it (see PEGASUS.md
+     "URL Inputs vs Fetch Jobs"). Don't re-implement `pegasus-transfer` with
+     `requests`/`wget`.
+   - A **dynamic API result** consumed only by this job: accept `--input-url`
+     and fetch at the top of the wrapper (60s timeout, `raise_for_status()`),
+     keeping `--input-file` as the pre-staged alternative so the same wrapper
+     works with local data. API keys arrive via environment variables
+     (`add_env`), never in the URL.
 
 ## Step 3: Select Reference Pattern
 
