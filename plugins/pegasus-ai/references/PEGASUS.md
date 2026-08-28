@@ -814,7 +814,7 @@ Benefits:
 
 ### Built-in Test Mode
 
-Include a `--test` flag that auto-downloads sample data, eliminating setup friction for new users:
+Include a `--test` flag that auto-downloads sample data, eliminating setup friction for new users. (Alternatively, register the sample URLs directly as Replica Catalog PFNs — see "URL Inputs vs Fetch Jobs" below — so Pegasus stages them at run time and generation stays offline; the download-at-generation approach shown here is right when the generator itself needs to read the data, e.g. to build a sample list.)
 
 ```python
 parser.add_argument("--test", action="store_true",
@@ -847,9 +847,79 @@ else:
     sys.exit(1)
 ```
 
-### API Data Acquisition (No Pre-Staged Input)
+### Getting External Data In: URL Inputs vs Fetch Jobs
 
-Some workflows fetch data from external APIs at runtime rather than using pre-staged input files. This breaks the traditional Pegasus assumption that inputs are registered in the Replica Catalog before workflow submission.
+When input data lives at a URL, pick the **lightest mechanism that fits** — a
+separate fetch job is the last resort, not the default:
+
+| Data source | Mechanism | Extra job? |
+|-------------|-----------|------------|
+| Static file at a URL (http/https/ftp/s3/gs/…) | Replica Catalog entry with the URL as the PFN — Pegasus stages it | No |
+| Dynamic API result (query params, auth, "latest" data), **one** consuming job | Fetch inside the consuming wrapper | No |
+| Dynamic API result with several consumers, multi-source merges, or rate-limited APIs | Dedicated fetch job | Yes |
+
+#### Pattern 1: URL replicas — let Pegasus stage the URL (preferred when a URL is provided)
+
+If the URL names a file that already exists, register the URL itself as the
+PFN. The stage-in job fetches it — no fetch job, no wrapper code:
+
+```python
+# workflow_generator.py
+input_file = File("observations.csv")
+rc.add_replica(
+    site="web",   # any label; the URL scheme selects the transfer tool
+    lfn=input_file,
+    pfn="https://data.example.org/2026/observations.csv",
+    # Optional but recommended for published datasets — verified on stage-in:
+    checksum={"sha256": "66a42b4be204c824a7533d2c677ff7cc5c44526300ecd6b45..."},
+)
+
+analyze_job = Job("analyze").add_inputs(input_file)  # nothing else changes
+```
+
+`pegasus-transfer` handles http(s)/ftp/s3/gs/scp/… URLs with retries built in,
+and the fetch is clustered with the workflow's other stage-in transfers.
+Writing a custom job that just `wget`s a static URL re-implements
+pegasus-transfer without its retries or checksum verification — don't.
+(`--test` sample data can use the same mechanism instead of `urlretrieve` at
+generation time.)
+
+#### Pattern 2: In-job fetch — fetch inside the consuming wrapper
+
+When the data must be *produced* by the request (query parameters, auth
+headers, server-side aggregation, "data since yesterday") and exactly one job
+consumes the result, fetch at the top of that job's wrapper instead of adding
+a fetch job:
+
+```python
+# wrapper — accepts either a URL or a pre-staged file, so the same wrapper
+# works when the data is local:
+parser.add_argument("--input-url", help="Fetch input from this API URL")
+parser.add_argument("--input-file", help="Pre-staged input file")
+
+def resolve_input(args) -> str:
+    if args.input_url:
+        response = requests.get(args.input_url, timeout=60)
+        response.raise_for_status()   # fail fast on HTTP errors
+        path = "fetched_input.csv"
+        with open(path, "wb") as f:
+            f.write(response.content)
+        return path
+    return args.input_file
+```
+
+- One fewer DAG node and one fewer staging hop; the fetch retries with the
+  job itself (`job.add_dagman_profile(retry="2")`).
+- The credential rule below applies unchanged: API keys reach the job only
+  via `add_env`, never baked into the URL in `add_args`.
+- Trade-offs to respect: a retry of the job refetches (nothing is cached);
+  N consumers would fetch N times; a fetch failure isn't separable from a
+  compute failure in `pegasus-analyzer`. When any of those matter, use a
+  dedicated fetch job.
+
+#### Pattern 3: Dedicated fetch job (multi-consumer / multi-source / rate-limited)
+
+Some workflows fetch data from external APIs at runtime rather than using pre-staged input files. This breaks the traditional Pegasus assumption that inputs are registered in the Replica Catalog before workflow submission. Reach for this when several jobs consume the same fetched data (fetch once, fan out), when a multi-source merge needs per-source graceful degradation, or when a rate-limited API must not be hit once per consumer or per retry of an expensive downstream step.
 
 **Pattern: First job fetches data, downstream jobs consume it:**
 

@@ -47,9 +47,10 @@ Evaluate the workflow against each category below. For each item, report one of:
 ### Category 2: Replica Catalog Correctness
 
 - [ ] All support files called by wrapper scripts (R scripts, JARs, etc.) are registered in the Replica Catalog
-- [ ] All input data files are registered (unless fetched at runtime by a fetch job)
-- [ ] File paths use `"file://" + os.path.abspath(path)` (absolute paths with file:// prefix)
+- [ ] All input data files are registered — local paths or direct URL PFNs — unless fetched at runtime (in-wrapper or by a fetch job)
+- [ ] Local file paths use `"file://" + os.path.abspath(path)` (absolute paths with file:// prefix); remote inputs may use the URL directly as the PFN (http/https/ftp/s3/…)
 - [ ] No executable wrapper scripts are in the Replica Catalog (those go in Transformation Catalog)
+- [ ] No job exists just to download a **static** URL — that belongs in the Replica Catalog as a URL PFN (pegasus-transfer stages it with retries and checksum verification). Runtime fetching is for dynamic API results only: in the consuming wrapper for a single consumer, a dedicated fetch job for multi-consumer / multi-source / rate-limited cases (PEGASUS.md "URL Inputs vs Fetch Jobs")
 
 ### Category 3: DAG Correctness
 
