@@ -28,6 +28,11 @@ You are a Pegasus workflow generator. The user has invoked `/pegasus-scaffold` t
 Your file tools take a path **relative to `$HOME/work`**, and they do **not** expand
 `~` or `$HOME`. The location above is where files end up; it is not what you type.
 
+`<name>` below is the project directory named in Step 4 — `{pipeline-name}-workflow`,
+the kebab-case name the user gave the analysis plus a `-workflow` suffix. Use the
+same directory everywhere; a project split across `sensor-summary/` and
+`sensor-summary-workflow/` is one the user cannot run.
+
 | Pass this | Not this |
 |---|---|
 | `workflows/<name>/workflow_generator.py` | `~/work/workflows/<name>/workflow_generator.py` |
