@@ -160,7 +160,7 @@ From: mambaorg/micromamba:1.5-jammy
    permitted`. It has to be done here: a bind mount cannot fix it, because the
    builder will not create a destination that is absent from the container.
 
-1. **Avoid packages whose install scripts change file ownership.** The same
+1. **Guard packages whose install scripts change file ownership.** The same
    emulated root maps only one user and one group into the build, so `chown`
    and `chgrp` fail with `Invalid argument` and take the whole build with them:
 
@@ -172,9 +172,22 @@ From: mambaorg/micromamba:1.5-jammy
 
    The reported error is a dpkg exit code and the file it names exists on the
    host, so this reads as a broken definition when the definition is fine.
-   `openssh-client` is the common offender — its postinst runs
-   `chgrp ssh /usr/bin/ssh-agent` — and a workflow container almost never needs
-   an ssh client. Prefer `https://` URLs or a Pegasus replica over `scp`.
+
+   Debian already provides the way out: postinst scripts wrap these steps in a
+   `dpkg-statoverride --list` check, so registering an override first makes the
+   package skip what it cannot do. For `openssh-client`, whose postinst runs
+   `chgrp ssh /usr/bin/ssh-agent && chmod 2755 /usr/bin/ssh-agent`:
+
+   ```
+   dpkg-statoverride --add root root 0755 /usr/bin/ssh-agent
+   apt-get install -y openssh-client
+   ```
+
+   No `--update` — that flag applies the ownership immediately, which is the
+   thing that fails. Verified in an unprivileged pod build: installs cleanly,
+   `ssh -V` works in the resulting image. The trade is that `ssh-agent` is not
+   setgid `ssh`, losing a ptrace-hardening measure for the agent process, so
+   state it in the definition rather than leaving it implicit.
 
 1. **All tools in one container**: Pegasus shares a single container across all jobs. Every tool from every wrapper must be installed.
 2. **Pin versions**: Use `tool==1.2.3` (pip) or `tool=1.2.3` (conda) for reproducibility.

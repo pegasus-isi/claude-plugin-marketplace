@@ -2,18 +2,26 @@ Bootstrap: docker
 From: python:3.8.12-slim
 
 %post
-    # Install system dependencies.
+    # An unprivileged build maps one user and one group, so chown/chgrp return
+    # "Invalid argument" and take the whole build down on a dpkg error that
+    # names neither the cause nor the package.
     #
-    # Avoid packages whose post-install scripts change file ownership.
-    # Studio builds these definitions unprivileged, where only one user and one
-    # group are mapped into the build, so chown/chgrp fail with "Invalid
-    # argument" and the whole build dies on a dpkg error that names neither the
-    # cause nor the package. openssh-client is the usual offender — its
-    # postinst runs `chgrp ssh /usr/bin/ssh-agent` — and a workflow container
-    # almost never needs an ssh client. Use https:// or a Pegasus replica for
-    # data instead of scp.
+    # openssh-client is the one that bites here: its postinst runs
+    #     chgrp ssh /usr/bin/ssh-agent && chmod 2755 /usr/bin/ssh-agent
+    # but only when no statoverride is registered for that path. Registering
+    # one first makes the postinst skip the step it cannot perform. Note the
+    # absence of --update: that flag is what would apply the ownership now, and
+    # applying it is exactly what fails.
+    #
+    # The trade is that ssh-agent is not setgid ssh, losing a ptrace-hardening
+    # measure for the agent process. Recorded here rather than left implicit.
+    # Use the same pattern for any other package whose postinst changes
+    # ownership.
+    dpkg-statoverride --add root root 0755 /usr/bin/ssh-agent
+
+    # Install system dependencies
     apt-get update && \
-        apt-get install -y git wget curl build-essential
+        apt-get install -y git wget curl openssh-client build-essential
     rm -rf /var/lib/apt/lists/*
 
     # Install Python dependencies
