@@ -160,6 +160,22 @@ From: mambaorg/micromamba:1.5-jammy
    permitted`. It has to be done here: a bind mount cannot fix it, because the
    builder will not create a destination that is absent from the container.
 
+1. **Avoid packages whose install scripts change file ownership.** The same
+   emulated root maps only one user and one group into the build, so `chown`
+   and `chgrp` fail with `Invalid argument` and take the whole build with them:
+
+   ```
+   chgrp: changing group of '/usr/bin/ssh-agent': Invalid argument
+   dpkg: error processing package openssh-client (--configure):
+   FATAL:   While performing build: while running %post section: exit status 100
+   ```
+
+   The reported error is a dpkg exit code and the file it names exists on the
+   host, so this reads as a broken definition when the definition is fine.
+   `openssh-client` is the common offender — its postinst runs
+   `chgrp ssh /usr/bin/ssh-agent` — and a workflow container almost never needs
+   an ssh client. Prefer `https://` URLs or a Pegasus replica over `scp`.
+
 1. **All tools in one container**: Pegasus shares a single container across all jobs. Every tool from every wrapper must be installed.
 2. **Pin versions**: Use `tool==1.2.3` (pip) or `tool=1.2.3` (conda) for reproducibility.
 3. **`PYTHONUNBUFFERED=1`**: Always set this in `%environment` so Pegasus captures logs in real time.

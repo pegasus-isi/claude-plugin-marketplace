@@ -2,9 +2,18 @@ Bootstrap: docker
 From: python:3.8.12-slim
 
 %post
-    # Install system dependencies
+    # Install system dependencies.
+    #
+    # Avoid packages whose post-install scripts change file ownership.
+    # Studio builds these definitions unprivileged, where only one user and one
+    # group are mapped into the build, so chown/chgrp fail with "Invalid
+    # argument" and the whole build dies on a dpkg error that names neither the
+    # cause nor the package. openssh-client is the usual offender — its
+    # postinst runs `chgrp ssh /usr/bin/ssh-agent` — and a workflow container
+    # almost never needs an ssh client. Use https:// or a Pegasus replica for
+    # data instead of scp.
     apt-get update && \
-        apt-get install -y git wget curl openssh-client build-essential
+        apt-get install -y git wget curl build-essential
     rm -rf /var/lib/apt/lists/*
 
     # Install Python dependencies
