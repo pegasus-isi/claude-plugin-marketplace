@@ -25,8 +25,14 @@ You are a Pegasus workflow generator. The user has invoked `/pegasus-scaffold` t
 
 ## Where to write — the path you pass is not the path on disk
 
-Your file tools take a path **relative to `$HOME/work`**, and they do **not** expand
-`~` or `$HOME`. The location above is where files end up; it is not what you type.
+Your file tools take a path **relative to the workspace root**, and they do **not**
+expand `~` or `$HOME`. The location above is where files end up; it is not what you
+type.
+
+The root is the product's to define, not yours to assume: a workflow project is
+`workflows/<name>/` relative to it, whatever it is. When you need its real path — for
+a shell command, or to write an absolute one — ask for it. `pwd` from the shell tool
+reports it, and listing `.` with the file tool shows what is already there.
 
 `<name>` below is the project directory named in Step 4 — `{pipeline-name}-workflow`,
 the kebab-case name the user gave the analysis plus a `-workflow` suffix. Use the
@@ -35,21 +41,19 @@ same directory everywhere; a project split across `sensor-summary/` and
 
 | Pass this | Not this |
 |---|---|
-| `workflows/<name>/workflow_generator.py` | `~/work/workflows/<name>/workflow_generator.py` |
-| `workflows/<name>/bin/run.sh` | `$HOME/work/workflows/<name>/bin/run.sh` |
-| `workflows/<name>/README.md` | `work/workflows/<name>/README.md` |
-| | `<name>/workflow_generator.py` |
-
-A real absolute path also works: `/home/ubuntu/work/workflows/<name>/...`.
+| `workflows/<name>/workflow_generator.py` | `~/workflows/<name>/workflow_generator.py` |
+| `workflows/<name>/bin/run.sh` | `$HOME/workflows/<name>/bin/run.sh` |
+| `workflows/<name>/README.md` | `<name>/README.md` |
 
 Every wrong form fails **silently** — the tool reports success and the transcript
 looks correct:
 
-- `~/work/…` creates a directory **literally named `~`**, at
-  `$HOME/work/~/work/workflows/<name>/`
-- `$HOME/work/…` does the same with a literal `$HOME`
-- `work/…` doubles the prefix: `$HOME/work/work/workflows/<name>/`
-- `<name>/…` drops the `workflows/` level: `$HOME/work/<name>/`
+- `~/…` is not expanded — it creates a directory **literally named `~`** under the
+  workspace root
+- `$HOME/…` does the same with a literal `$HOME`
+- repeating the root's own last path segment doubles it: pass `foo/…` when the root
+  is `…/foo` and the files land in `…/foo/foo/…`
+- `<name>/…` drops the `workflows/` level
 
 All of them land outside the one directory the Workflows tab scans, so the project
 gets no Generate, Plan or Run button. Nothing errors. The files are simply
