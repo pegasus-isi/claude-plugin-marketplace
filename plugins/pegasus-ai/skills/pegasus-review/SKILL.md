@@ -42,7 +42,8 @@ Evaluate the workflow against each category below. For each item, report one of:
 - [ ] Support files (R scripts, JARs, config files) are NOT in the Transformation Catalog — they belong in the Replica Catalog
 - [ ] Container image string is well-formed (`file:///absolute/path/to/image.sif`, with matching `image_site`)
 - [ ] Memory and cores are set appropriately per tool (check against `TOOL_CONFIGS` if present)
-- [ ] External data directories (caches, databases, model weights) use CondorIO `transfer_input_files` on the Transformation — NOT container `mounts=[]`. Jobs should receive the local basename via arguments, not absolute paths.
+- [ ] External data directories (caches, databases, model weights) use CondorIO `transfer_input_files` on the Transformation — NOT container `mounts=[]`. Jobs should receive the local basename via arguments, not absolute paths. (HTCondor-only: if the workflow must run on Slurm too, see PEGASUS.md "Transferring Data Directories via CondorIO")
+- [ ] Stageable transformations use `site="local"` (where the script lives), not the execution site
 
 ### Category 2: Replica Catalog Correctness
 
@@ -96,9 +97,23 @@ For each wrapper script, verify:
 ### Category 8: CLI and Usability
 
 - [ ] `workflow_generator.py --help` would produce useful output (argparse with descriptions)
-- [ ] Standard flags are present: `-s` (skip sites), `-e` (execution site), `-o` (output)
+- [ ] Standard flags are present: `-e/--execution-site` (dest `execution_site`), `-o` (output), and the site options from the template (`--site-style`, `--queue`, `--project`, `--tag-profile`, `--shared-filesystem`)
+- [ ] Every argument has a default, so a zero-argument run plans (Pegasus Studio's Run button)
 - [ ] Input validation catches missing required arguments before Pegasus API calls
 - [ ] Error messages are descriptive (not just stack traces)
+
+### Category 9: Site Portability (HTCondor and Slurm)
+
+See PEGASUS.md "Portable Sites". A workflow that only runs on `condorpool` is an
+ERROR if it is meant for clusters; flag each item:
+
+- [ ] **ERROR** The generator does not build a site catalog itself (no `SiteCatalog`/`Site(...)` with `style=condor`/`universe=vanilla`); `custom_sites.ensure_sites_yml()` writes `sites.yml`
+- [ ] **ERROR** Every transformation has a `runtime` (seconds) — batch sites refuse or kill jobs without one
+- [ ] **ERROR** No scheduler details in the workflow: no ClassAd `requirements`, `+Attribute`s, partitions, accounts or GPU model/VRAM constraints on transformations or jobs. Unusual needs are expressed as a Pegasus tag (`add_profiles(Namespace.PEGASUS, key="tag", value=...)`) that the site catalog maps
+- [ ] **ERROR** `pegasus.transfer.bypass.input.staging` is not set unconditionally — only for batch/Slurm sites (it breaks condor pools that stage over HTCondor file transfer)
+- [ ] **ERROR** Containers bind the workflow directory (`container_arguments="--bind <wf_dir>"`) on batch sites only — never on a condor pool. Without it Slurm jobs die with exit 127 "Unable to execute the specified binary"
+- [ ] **WARNING** Containerized workflows name the container's worker package (`pegasus::worker`, platform matching the image base, version from `pegasus-version`) with `worker.package=true`, `strict=false`, `autodownload=false`
+- [ ] **SUGGESTION** `pegasus.transfer.links=true` is set
 
 ## Step 3: Generate Report
 

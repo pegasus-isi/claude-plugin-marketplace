@@ -9,7 +9,7 @@ A Pegasus workflow consists of five components:
 | Component | Purpose |
 |-----------|---------|
 | **Properties** | Pegasus configuration (transfer threads, retry settings) |
-| **Site Catalog** | Defines execution sites (local, condorpool, etc.) |
+| **Site Catalog** | Defines execution sites (local, condorpool, a Slurm `compute`, ...). Written by `custom_sites.py`, never hard-coded in the generator — see [Portable Sites](#portable-sites-htcondor-and-slurm) |
 | **Transformation Catalog** | Registers executables (wrapper scripts) and containers |
 | **Replica Catalog** | Registers input data files and their physical locations |
 | **Workflow (DAG)** | Defines jobs, their I/O files, and dependencies |
@@ -19,6 +19,7 @@ A Pegasus workflow consists of five components:
 ```
 my-workflow/
 ├── workflow_generator.py       # Generates all Pegasus catalogs + DAG
+├── custom_sites.py             # Site catalog (assets/templates/custom_sites.py)
 ├── bin/
 │   ├── step1.py                # Python wrapper for each pipeline step
 │   ├── step2.py
@@ -47,7 +48,6 @@ from Pegasus.api import *
 
 class MyWorkflow:
     wf = None
-    sc = None
     tc = None
     rc = None
     props = None
@@ -65,8 +65,6 @@ class MyWorkflow:
         self.local_storage_dir = os.path.join(self.wf_dir, "output")
 
     def write(self):
-        if self.sc is not None:
-            self.sc.write()
         self.props.write()
         self.rc.write()
         self.tc.write()
@@ -76,28 +74,11 @@ class MyWorkflow:
         self.props = Properties()
         self.props["pegasus.transfer.threads"] = "16"
 
-    def create_sites_catalog(self, exec_site_name="condorpool"):
-        self.sc = SiteCatalog()
-        local = Site("local").add_directories(
-            Directory(
-                Directory.SHARED_SCRATCH, self.shared_scratch_dir
-            ).add_file_servers(
-                FileServer("file://" + self.shared_scratch_dir, Operation.ALL)
-            ),
-            Directory(
-                Directory.LOCAL_STORAGE, self.local_storage_dir
-            ).add_file_servers(
-                FileServer("file://" + self.local_storage_dir, Operation.ALL)
-            ),
-        )
-        exec_site = (
-            Site(exec_site_name)
-            .add_condor_profile(universe="vanilla")
-            .add_pegasus_profile(style="condor")
-        )
-        self.sc.add_sites(local, exec_site)
+    # No create_sites_catalog(): the site catalog is custom_sites.py's job
+    # (ensure_sites_yml), so this generator plans on an HTCondor pool by
+    # default and on Slurm with --site-style slurm. See "Portable Sites".
 
-    def create_transformation_catalog(self, exec_site_name="condorpool"):
+    def create_transformation_catalog(self):
         # See "Transformation Catalog" section below
         pass
 
@@ -145,14 +126,17 @@ mkdir = Transformation(
     "mkdir", site="local", pfn="/bin/mkdir", is_stageable=False
 )
 
-# Containerized transformation (runs on worker nodes)
+# Containerized transformation (runs on worker nodes). site="local" is where
+# the script lives (the submit host) — Pegasus ships it to the execution site,
+# so the transformation never names one. runtime (seconds) is mandatory on
+# batch sites.
 my_step = Transformation(
     "my_step",
-    site=exec_site_name,
+    site="local",
     pfn=os.path.join(self.wf_dir, "bin/my_step.py"),
     is_stageable=True,
     container=container,
-).add_pegasus_profile(memory="4 GB", cores=2)
+).add_pegasus_profile(memory="4 GB", cores=2, runtime=3600)
 
 self.tc.add_containers(container)
 self.tc.add_transformations(mkdir, my_step)
@@ -167,6 +151,100 @@ self.tc.add_transformations(mkdir, my_step)
 
 - Support files called by wrapper scripts (R scripts, JARs, config files)
 - These go in the **Replica Catalog** as data dependencies instead
+
+## Portable Sites (HTCondor and Slurm)
+
+A generator that hard-codes a `condorpool` site cannot run on a Slurm cluster:
+a batch site needs `pegasus.style=glite`, `condor.grid_resource="batch slurm"`,
+scratch/storage directories, a partition and an account, and every job needs a
+wall-clock runtime. Keep the workflow site-agnostic and put everything about
+*where* it runs in `sites.yml`:
+
+**The workflow states only portable needs.** `memory`, `cores`, `gpus` and
+`runtime` (seconds, generous — a batch site kills a job that exceeds it, and
+refuses one without it) per tool, in `TOOL_CONFIGS`. Jobs with unusual needs
+carry a Pegasus **tag** (`gpu`, `train`, `bigmem`); what the tag means — GPU
+partition, `--constraint=a100`, a longer queue — is set per site in the
+catalog's `x-tags`, so users tune it without editing the generator. No
+ClassAd `requirements`, no partitions, no VRAM constraints in the workflow.
+
+```python
+# job-level tag; add_profiles works with any API version
+# (add_pegasus_profile(tag=...) needs Pegasus >= 5.1.3dev)
+job.add_profiles(Namespace.PEGASUS, key="tag", value="gpu")
+```
+
+**`custom_sites.py` writes the catalog** (`assets/templates/custom_sites.py`;
+copy it next to the generator, which imports `ensure_sites_yml`). Precedence,
+most specific first:
+
+1. A `sites.yml` entry someone wrote for the site — kept as-is.
+2. A **hosted catalog** named in `~/.pegasusrc`
+   (`pegasus.catalog.site.repo.file = unity.yml`, from
+   [pegasushub/pegasus-site-catalogs](https://github.com/pegasushub/pegasus-site-catalogs/tree/main/conf)).
+   Pegasus downloads it and merges `sites.yml` over it key by key; hosted
+   catalogs name their site `compute`.
+3. Otherwise an HTCondor `condorpool` site — so a zero-argument run (Pegasus
+   Studio's Run button) plans with no setup.
+
+Only the requested site's entry is written; a `local` site (scratch and
+`output/` under the workflow directory) is always ensured for `-o local`. The
+generator exposes the knobs as ordinary options (they appear in Studio's run
+form): `-e/--execution-site`, `--site-style auto|condor|slurm|none`, `--queue`,
+`--project`, `--site-scratch`, `--site-profile NS:KEY=VALUE`,
+`--tag-profile TAG:NS:KEY=VALUE`, `--shared-filesystem auto|yes|no`.
+
+```bash
+./workflow_generator.py                                   # HTCondor pool
+./workflow_generator.py -e compute --site-style slurm \
+    --queue cpu --project my_lab --tag-profile gpu:pegasus:queue=gpu
+echo "pegasus.catalog.site.repo.file = unity.yml" >> ~/.pegasusrc
+./workflow_generator.py -e compute --site-style slurm --project my_lab  # hosted
+pegasus-plan --submit -s <site> -o local workflow.yml
+```
+
+Slurm submission goes through HTCondor's glite/BLAHP: plan on the cluster's
+login node with HTCondor and Pegasus (6.0 for tags and hosted catalogs)
+installed. Always return to the same login node — DAGMan lives there.
+
+**Settings that depend on the site** (the template derives them from the
+style `ensure_sites_yml` returns):
+
+| Setting | HTCondor pool | Slurm / hosted batch site | Why |
+|---|---|---|---|
+| `pegasus.transfer.links` | on | on | No-op unless an input already sits on the site |
+| `pegasus.transfer.bypass.input.staging` | **off** | on | Jobs read inputs (the multi-GB `.sif`) in place; only valid where workers share the submit host's filesystem |
+| Container `--bind <workflow dir>` | **never** | on | Batch sites stage inputs as symlinks into the workflow dir and PegasusLite starts containers with `--no-home`; without the bind every job dies with kickstart *Unable to execute the specified binary* (exit 127). On a condor pool the dir does not exist on workers, so the bind would fail every job |
+
+### Worker package in containers
+
+PegasusLite runs `pegasus-kickstart` from a *worker package* inside the
+container, whose OS is the image's base — not the submit host's. By default it
+ships the submit host's package and, on a mismatch, downloads another from
+inside the job. That fails two ways: the image may have no curl/wget (exit 71,
+*Unable to find curl/wget* — e.g. an unprivileged `--fakeroot` build on a
+cluster cannot `apt-get`), and forcing the host's package can break on
+glibc (*GLIBC_2.34 not found*; apt-installed Pegasus builds a dynamic
+kickstart, the pip wheel a static one). Name the container's package instead —
+the documented recipe:
+
+```python
+# CONTAINER_PLATFORM matches the image base: x86_64_deb_12, x86_64_ubuntu_24, ...
+# Older than any published package (e.g. Debian 11 under Pegasus 6.0)?
+# use x86_64_rhel_8 (glibc 2.28).
+tc.add_transformations(Transformation(
+    "worker", namespace="pegasus", site="local", is_stageable=True,
+    pfn=f"https://download.pegasus.isi.edu/pegasus/{ver}/"
+        f"pegasus-worker-{ver}-{CONTAINER_PLATFORM}.tar.gz",
+    arch=Arch.X86_64, os_type=OS.LINUX))
+props["pegasus.transfer.worker.package"] = "true"
+props["pegasus.transfer.worker.package.strict"] = "false"       # host side
+props["pegasus.transfer.worker.package.autodownload"] = "false"
+```
+
+`ver` must be the planner's version (`pegasus-version`;
+`custom_sites.worker_package_url()` does both). If it cannot be determined,
+leave all three properties unset rather than guess.
 
 ## Replica Catalog
 
@@ -529,7 +607,8 @@ From: ubuntu:22.04
 # 1. Generate workflow
 ./workflow_generator.py [options] --output workflow.yml
 
-# 2. Plan and submit
+# 2. Plan and submit (-s: the site you generated for — condorpool by default,
+#    compute on a Slurm cluster; the generator prints the exact command)
 pegasus-plan --submit -s condorpool -o local workflow.yml
 
 # 3. Monitor
@@ -553,6 +632,10 @@ pegasus-statistics <run-directory>
    - "No such file or directory" for support scripts → add to Replica Catalog + job inputs
    - Out of memory → increase `memory` in Transformation profile
    - Container transfer failures → verify the `.sif` file path and `image_site` are correct
+   - Exit 71, *Unable to find curl/wget* / *Unable to download a worker package* → name the container's worker package ([Worker package in containers](#worker-package-in-containers))
+   - *GLIBC_2.3x not found (required by pegasus-kickstart)* → the submit host's worker package is in use inside an older container; same fix
+   - Exit 127, kickstart *Unable to execute the specified binary* on a Slurm site → containers need `--bind <workflow dir>` ([Portable Sites](#portable-sites-htcondor-and-slurm))
+   - Job rejected or killed for walltime on Slurm → every transformation needs a `runtime`
 
 ## Reference: Complete Pegasus Python API
 
@@ -563,20 +646,19 @@ from Pegasus.api import *
 props = Properties()
 props["pegasus.transfer.threads"] = "16"
 
-# Site Catalog
-sc = SiteCatalog()
-site = Site("condorpool").add_condor_profile(universe="vanilla")
-sc.add_sites(site)
+# Site Catalog — not in the generator: custom_sites.ensure_sites_yml() writes
+# sites.yml (HTCondor by default, Slurm via --site-style slurm). See
+# "Portable Sites".
 
 # Container
 container = Container("name", Container.SINGULARITY, "file:///path/to/img.sif", "local")
 
 # Transformation Catalog
 tc = TransformationCatalog()
-tx = Transformation("name", site="condorpool", pfn="/path/to/script.py",
+tx = Transformation("name", site="local", pfn="/path/to/script.py",
                     is_stageable=True, container=container)
-tx.add_pegasus_profile(memory="4 GB", cores=2)
-# Transfer external data directories via CondorIO (preferred over container mounts)
+tx.add_pegasus_profile(memory="4 GB", cores=2, runtime=3600)
+# Transfer external data directories via CondorIO (HTCondor pools only)
 tx.add_profiles(Namespace.CONDOR, key="transfer_input_files", value="/path/to/cache_dir")
 tc.add_containers(container)
 tc.add_transformations(tx)
@@ -674,7 +756,7 @@ Compare with the stageable pattern (scripts on submit host, transferred to worke
 # Scripts are on submit host — Pegasus stages them to workers
 tx = Transformation(
     "my_step",
-    site=exec_site_name,
+    site="local",
     pfn=os.path.join(self.wf_dir, "bin/my_step.py"),  # Path on submit host
     is_stageable=True,                                  # Transfer to workers
     container=my_container,
@@ -695,6 +777,12 @@ tx = Transformation(
 
 When jobs need access to external data directories (model caches, databases, reference collections), **prefer HTCondor's `transfer_input_files`** over container bind mounts. This is the recommended approach because it works on any HTCondor pool without requiring a shared filesystem.
 
+> **HTCondor only.** `transfer_input_files` is a condor profile; on a Slurm
+> site (glite) it does nothing. If the workflow must also run on a batch
+> cluster, register the directory's files in the Replica Catalog instead, or
+> make the path a generator option and bind it with `container.arguments`
+> only on batch sites (where the shared filesystem makes it visible).
+
 **Pattern: Add `transfer_input_files` on the Transformation, pass local basename to wrapper:**
 
 ```python
@@ -710,7 +798,7 @@ container = Container(
 # Transformation — HTCondor transfers the directory to each job
 my_step = Transformation(
     "my_step",
-    site=exec_site_name,
+    site="local",
     pfn=os.path.join(self.wf_dir, "bin/my_step.py"),
     is_stageable=True,
     container=container,
@@ -762,23 +850,28 @@ cmd = ["mytool", "--data", args.cache_dir, ...]
 Define memory and CPU requirements per tool in a configuration dictionary, then apply during transformation registration:
 
 ```python
+# runtime: wall-clock seconds, mandatory on batch sites — be generous
 TOOL_CONFIGS = {
-    "fastqc":   {"memory": "2 GB",  "cores": 2},
-    "fastp":    {"memory": "4 GB",  "cores": 4},
-    "megahit":  {"memory": "16 GB", "cores": 8},
-    "quast":    {"memory": "8 GB",  "cores": 4},
-    "gtdbtk":   {"memory": "64 GB", "cores": 8},   # Taxonomy is expensive
-    "train":    {"memory": "4 GB",  "cores": 2},    # ML training
-    "predict":  {"memory": "2 GB",  "cores": 1},    # ML inference
+    "fastqc":   {"memory": "2 GB",  "cores": 2, "runtime": 3600},
+    "fastp":    {"memory": "4 GB",  "cores": 4, "runtime": 3600},
+    "megahit":  {"memory": "16 GB", "cores": 8, "runtime": 12 * 3600},
+    "quast":    {"memory": "8 GB",  "cores": 4, "runtime": 2 * 3600},
+    "gtdbtk":   {"memory": "64 GB", "cores": 8, "runtime": 12 * 3600},  # Taxonomy is expensive
+    "train":    {"memory": "4 GB",  "cores": 2, "runtime": 4 * 3600,
+                 "tag": "train"},                                       # ML training
+    "predict":  {"memory": "2 GB",  "cores": 1, "runtime": 1800},      # ML inference
 }
 
 # Apply during transformation catalog creation
 for tool_name, config in TOOL_CONFIGS.items():
-    tx = Transformation(tool_name, site=exec_site_name, ...)
+    tx = Transformation(tool_name, site="local", ...)
     tx.add_pegasus_profile(
         memory=config["memory"],
         cores=config.get("cores", 1),
+        runtime=config["runtime"],
     )
+# A "tag" is applied to the tool's jobs (see Portable Sites); the site
+# catalog's x-tags say what it means on each cluster.
 ```
 
 This centralizes resource tuning and makes it easy to adjust without hunting through job definitions.

@@ -53,7 +53,7 @@ without the guide you will re-derive patterns this project has already settled,
 and the container, staging and fan-out conventions below assume you have read it.
 
 1. Read `references/PEGASUS.md` — this is the comprehensive guide for all Pegasus patterns.
-2. Read `assets/templates/workflow_generator_template.py` — your starting point for the workflow generator.
+2. Read `assets/templates/workflow_generator_template.py` — your starting point for the workflow generator — and `assets/templates/custom_sites.py`, which it imports to write the site catalog.
 3. Read `assets/templates/wrapper_template.py` and `assets/templates/wrapper_template.sh` — starting points for wrappers.
 4. Read `assets/templates/Apptainer_template.def` — starting point for the container.
 
@@ -118,7 +118,9 @@ Start from `assets/templates/workflow_generator_template.py` and customize:
 1. **Class name**: `{PipelineName}Workflow`
 2. **`wf_name`**: `"{pipeline_name}"`
 3. **`__init__`**: Add pipeline-specific parameters
-4. **`create_transformation_catalog`**: Register one `Transformation` per wrapper script with appropriate memory/cores
+4. **`create_transformation_catalog`**: Register one `Transformation` per wrapper script, on `site="local"`, with memory, cores and a generous `runtime` (seconds) in `TOOL_CONFIGS`; give tools with unusual needs (GPU, long training) a `tag`
+4a. **`CONTAINER_PLATFORM`**: set it to the container image's base OS (e.g. `x86_64_deb_12` for `python:3.11-slim`) — it selects the worker package staged into the container
+4b. **Copy `assets/templates/custom_sites.py`** unchanged next to `workflow_generator.py`. Do not write a `create_sites_catalog()`: sites come from `custom_sites.ensure_sites_yml()`, which plans on HTCondor by default and on Slurm with `--site-style slurm` (PEGASUS.md "Portable Sites")
 5. **`create_replica_catalog`**: Register input files — local paths or direct
    URLs as PFNs (a URL PFN is staged by Pegasus itself; no fetch job needed) —
    or leave empty for runtime API-fetch patterns
@@ -145,10 +147,11 @@ avoids all four — that is the strongest reason to start from it:
   builders: `ReplicaCatalog` has `add_replica()` but no `get_replica()`, and
   `Directory` has no `add_directory()`. When a later job needs a file, keep a
   reference to your own `File` object — never ask a catalog to hand one back.
-- Add each site to the SiteCatalog exactly once. Build `local` and the exec
-  site, then register both in a single `add_sites(local, exec_site)` call; a
-  second registration of `local` raises `DuplicateError` when the generator
-  runs, not when it is planned.
+- Do not build a SiteCatalog in the generator. Hand-written site catalogs
+  were where `condorpool` got hard-coded (the workflow then cannot run on
+  Slurm) and where `local` got registered twice (`DuplicateError` when the
+  generator runs). `custom_sites.ensure_sites_yml()` writes `sites.yml`,
+  adding only the requested site and `local`.
 - Nothing executes above its definition. The only top-level call is the
   `if __name__ == "__main__": main()` guard on the last line of the file; a
   bare `main()` placed above `def main()` dies with `NameError`.
@@ -269,6 +272,11 @@ mind that wrote the bug. Finish by having the planner read it instead:
 python3 workflow_generator.py <args>          # writes workflow.yml + the catalogs
 pegasus-plan --dir submit --sites condorpool --output-sites local workflow.yml
 ```
+
+`--sites condorpool` matches the generator's default site; the generator
+writes `sites.yml` with it, so planning needs no other setup. To check the
+Slurm variant too, generate with `-e compute --site-style slurm --queue cpu`
+and plan with `--sites compute`.
 
 Planning is local, takes seconds, needs no container built and no pool running.
 It resolves every file against its producer and every transformation against its
