@@ -104,6 +104,7 @@ Start from `assets/templates/wrapper_template.sh` and customize:
 3. **Support files via `os.getcwd()`**: If the wrapper needs a support file (R script, JAR), find it with `os.path.join(os.getcwd(), "filename")` — NOT relative to `__file__`.
 4. **Create subdirectories**: Any output path containing `/` needs `os.makedirs(os.path.dirname(output), exist_ok=True)`.
 5. **Print the command**: Always log the command being run — this is essential for debugging via `pegasus-analyzer`.
+6. **Test it inside the container**: `apptainer exec Apptainer/{Name}_Container.sif python3 bin/{step}.py --help`, then on a small input. Never `pip install` the wrapper's libraries into the host interpreter (system or `--user`) to try it there: the job runs in the image, not on the host, and the packages left behind shadow whatever else was installed against that interpreter. `python3 -m py_compile` is the most a host check should do before the image exists.
 
 ## Step 5: Show Integration
 

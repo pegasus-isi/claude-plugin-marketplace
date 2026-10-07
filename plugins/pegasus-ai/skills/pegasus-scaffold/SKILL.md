@@ -240,6 +240,25 @@ never tell the user to add one themselves.
 - [ ] **README has the runnable invocation**: the exact generator command, all required arguments filled in, in a fenced `bash` block
 - [ ] **No directory scanning**: No `glob()`, `os.listdir()`, or `list.files()` between jobs
 - [ ] **Support files use `os.getcwd()`**: Not `__file__`-relative paths
+- [ ] **Steps were exercised inside the container**, not against the host's Python
+      (see below)
+
+**Where a step gets tested.** The job will run inside the Apptainer image, so
+that is the only environment a check is evidence for. Build the image, then run
+each wrapper through it:
+
+```bash
+apptainer exec Apptainer/{Name}_Container.sif python3 bin/{step}.py --help
+apptainer exec Apptainer/{Name}_Container.sif python3 bin/{step}.py <args on a small input>
+```
+
+Do not `pip install` the wrapper's libraries into the host interpreter, system
+or `--user`, to try the step there. It proves nothing about the container, and
+on a shared or persistent host it leaves packages behind that shadow what other
+tools were installed against. Before the image exists, `python3 -m py_compile
+bin/{step}.py` catches syntax errors without importing anything. If an isolated
+environment is unavoidable, a venv inside the project (`.venv/`, in
+`.gitignore`) is a convenience for editing, not a substitute for the container.
 
 ## Step 6: Plan It
 
