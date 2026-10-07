@@ -12,6 +12,11 @@ Pipeline steps:
 
 Usage:
     ./workflow_generator.py [CUSTOMIZE: add usage examples]
+
+Sites: the workflow names no scheduler. Jobs state cores, memory, a wall-clock
+runtime and optional tags; custom_sites.py (copy it next to this file) writes
+sites.yml for an HTCondor pool by default, or for Slurm via --site-style slurm
+--queue --project. See PEGASUS.md "Portable Sites".
 """
 
 import argparse
@@ -21,6 +26,14 @@ import sys
 from pathlib import Path
 
 from Pegasus.api import *
+
+# Site-catalog handling (assets/templates/custom_sites.py, copied next to this
+# file). Keeps this generator free of scheduler details.
+sys.path.insert(0, str(Path(__file__).parent.resolve()))
+from custom_sites import (  # noqa: E402
+    STYLES, ensure_sites_yml, hosted_catalog, is_batch_site, parse_profile,
+    parse_tag_profile, worker_package_url,
+)
 
 # [CUSTOMIZE] Add any additional imports needed for your workflow
 # Examples: json, csv, glob, datetime, requests, urllib.request
@@ -32,21 +45,33 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# [CUSTOMIZE] Per-tool resource configuration (see mag-workflow, earthquake-workflow)
-# Maps tool names to memory and core requirements for transformation catalog.
+# [CUSTOMIZE] Per-tool resource configuration — the ONLY resource statements
+# the workflow makes. Portable on any site: memory, cores, gpus, runtime.
+# runtime is a wall-clock budget in seconds; batch sites (Slurm) refuse or kill
+# jobs without one, so it is mandatory — be generous. Anything
+# scheduler-specific (partition, account, GPU model, ClassAds) belongs in the
+# site catalog, keyed by tag: give tools with unusual needs a "tag" ("gpu",
+# "bigmem", ...) and users tune it with --tag-profile TAG:NS:KEY=VALUE.
 TOOL_CONFIGS = {
-    "step1": {"memory": "2 GB", "cores": 1},
-    "step2": {"memory": "4 GB", "cores": 2},
-    "step3": {"memory": "2 GB", "cores": 1},
-    # "merge": {"memory": "1 GB", "cores": 1},
+    "step1": {"memory": "2 GB", "cores": 1, "runtime": 1800},
+    "step2": {"memory": "4 GB", "cores": 2, "runtime": 3600},
+    "step3": {"memory": "2 GB", "cores": 1, "runtime": 1800},
+    # "train": {"memory": "16 GB", "cores": 4, "gpus": 1, "runtime": 4 * 3600,
+    #           "tag": "gpu"},
 }
+
+# [CUSTOMIZE] The container's OS, for the Pegasus worker package staged into
+# it (see PEGASUS.md "Worker package in containers"). Must match the image's
+# base, not the submit host: e.g. "x86_64_deb_12" for python:3.11-slim /
+# debian:12, "x86_64_ubuntu_24" for ubuntu:24.04. For a base older than any
+# published package, use "x86_64_rhel_8" (glibc 2.28, runs on Debian 11+).
+CONTAINER_PLATFORM = "x86_64_deb_12"
 
 
 class MyWorkflow:
     """[CUSTOMIZE] Describe your workflow class."""
 
     wf = None
-    sc = None
     tc = None
     rc = None
     props = None
@@ -56,6 +81,9 @@ class MyWorkflow:
     shared_scratch_dir = None
     local_storage_dir = None
     wf_name = "my_workflow"  # [CUSTOMIZE] Workflow name
+    # Set by main() from the site in use (see setup_site_catalog).
+    worker_package_url = None
+    bind_workflow_dir = False
 
     def __init__(self, dagfile="workflow.yml"):
         self.dagfile = dagfile
@@ -65,8 +93,6 @@ class MyWorkflow:
 
     def write(self):
         """Write all catalogs and workflow to files."""
-        if self.sc is not None:
-            self.sc.write()
         self.props.write()
         self.rc.write()
         self.tc.write()
@@ -75,42 +101,40 @@ class MyWorkflow:
     # ------------------------------------------------------------------
     # Properties — rarely needs changes
     # ------------------------------------------------------------------
-    def create_pegasus_properties(self):
+    def create_pegasus_properties(self, sites_yml="sites.yml",
+                                  bypass_input_staging=False):
         self.props = Properties()
         self.props["pegasus.transfer.threads"] = "16"
+        # Symlink rather than copy when an input already sits on the
+        # execution site. A no-op otherwise, so always on.
+        self.props["pegasus.transfer.links"] = "true"
+        if bypass_input_staging:
+            # Jobs read inputs (notably the .sif) straight from the submit
+            # host's paths. Only valid where workers share a filesystem with
+            # the submit host (a Slurm cluster) — never on a condor pool
+            # staging over HTCondor file transfer.
+            self.props["pegasus.transfer.bypass.input.staging"] = "true"
+        if self.worker_package_url:
+            # Stage the container-compatible worker package named in the TC
+            # (pegasus::worker) and never download one from inside a job:
+            # the image may lack curl/wget, workers may lack internet, and the
+            # submit host's kickstart may need a newer glibc than the image.
+            self.props["pegasus.transfer.worker.package"] = "true"
+            self.props["pegasus.transfer.worker.package.strict"] = "false"
+            self.props["pegasus.transfer.worker.package.autodownload"] = "false"
+        if os.path.isfile(sites_yml):
+            # Lets pegasus-plan find sites.yml from any directory.
+            self.props["pegasus.catalog.site"] = "YAML"
+            self.props["pegasus.catalog.site.file"] = os.path.abspath(sites_yml)
         # [CUSTOMIZE] Add any extra properties if needed
-
-    # ------------------------------------------------------------------
-    # Site Catalog — standard boilerplate
-    # ------------------------------------------------------------------
-    def create_sites_catalog(self, exec_site_name="condorpool"):
-        self.sc = SiteCatalog()
-
-        local = Site("local").add_directories(
-            Directory(
-                Directory.SHARED_SCRATCH, self.shared_scratch_dir
-            ).add_file_servers(
-                FileServer("file://" + self.shared_scratch_dir, Operation.ALL)
-            ),
-            Directory(
-                Directory.LOCAL_STORAGE, self.local_storage_dir
-            ).add_file_servers(
-                FileServer("file://" + self.local_storage_dir, Operation.ALL)
-            ),
-        )
-
-        exec_site = (
-            Site(exec_site_name)
-            .add_condor_profile(universe="vanilla")
-            .add_pegasus_profile(style="condor")
-        )
-
-        self.sc.add_sites(local, exec_site)
 
     # ------------------------------------------------------------------
     # Transformation Catalog
     # ------------------------------------------------------------------
-    def create_transformation_catalog(self, exec_site_name="condorpool"):
+    def create_transformation_catalog(self):
+        """Containers and transformations. Nothing here names a site:
+        stageable scripts live on "local" (the submit host) and are shipped
+        to wherever the job runs."""
         self.tc = TransformationCatalog()
 
         # Container definition
@@ -123,6 +147,14 @@ class MyWorkflow:
             image="file:///absolute/path/to/My_Container.sif",  # [CUSTOMIZE] Image
             image_site="local",
         )
+        if self.bind_workflow_dir:
+            # Batch sites stage inputs as symlinks into the workflow
+            # directory, and PegasusLite starts containers with --no-home, so
+            # without this bind every job fails with kickstart "Unable to
+            # execute the specified binary" (exit 127). Never on a condor
+            # pool: the directory does not exist on its workers.
+            container.add_pegasus_profile(
+                container_arguments=f"--bind {self.wf_dir}")
 
         # [CUSTOMIZE] Register each wrapper script as a transformation.
         #
@@ -131,11 +163,11 @@ class MyWorkflow:
         #
         #   tx = Transformation(
         #       "step_name",
-        #       site=exec_site_name,
+        #       site="local",
         #       pfn=os.path.join(self.wf_dir, "bin/step_name.py"),
         #       is_stageable=True,
         #       container=container,
-        #   ).add_pegasus_profile(memory="2 GB", cores=1)
+        #   ).add_pegasus_profile(memory="2 GB", cores=1, runtime=1800)
         #
         # Pattern B: Scripts baked into the container (is_stageable=False).
         #   See: mag-workflow
@@ -146,19 +178,23 @@ class MyWorkflow:
         #       pfn="/usr/local/bin/step_name.sh",
         #       is_stageable=False,
         #       container=container,
-        #   ).add_pegasus_profile(memory="4 GB", cores=2)
+        #   ).add_pegasus_profile(memory="4 GB", cores=2, runtime=3600)
 
         transformations = []
         for tool_name, config in TOOL_CONFIGS.items():
             tx = Transformation(
                 tool_name,
-                site=exec_site_name,
+                site="local",
                 pfn=os.path.join(self.wf_dir, f"bin/{tool_name}.py"),
                 is_stageable=True,
                 container=container,
             ).add_pegasus_profile(
-                memory=config["memory"], cores=config.get("cores", 1)
+                memory=config["memory"],
+                cores=config.get("cores", 1),
+                runtime=config["runtime"],
             )
+            if config.get("gpus"):
+                tx.add_pegasus_profile(gpus=config["gpus"])
             transformations.append(tx)
 
         # [CUSTOMIZE] Add mkdir if you need local directory creation
@@ -166,6 +202,19 @@ class MyWorkflow:
         #     "mkdir", site="local", pfn="/bin/mkdir", is_stageable=False
         # )
         # transformations.append(mkdir)
+
+        if self.worker_package_url:
+            transformations.append(
+                Transformation(
+                    "worker",
+                    namespace="pegasus",
+                    site="local",
+                    pfn=self.worker_package_url,
+                    is_stageable=True,
+                    arch=Arch.X86_64,
+                    os_type=OS.LINUX,
+                )
+            )
 
         self.tc.add_containers(container)
         self.tc.add_transformations(*transformations)
@@ -258,6 +307,12 @@ class MyWorkflow:
         output2 = File(f"{item}_step2_output.json")
         output3 = File(f"{item}_step3_result.png")
 
+        # Tools with a "tag" in TOOL_CONFIGS carry it on their jobs, so the
+        # site catalog can route them (partition, GPU model, ...). Written
+        # with add_profiles: add_pegasus_profile(tag=...) needs API >= 5.1.3.
+        #   job.add_profiles(Namespace.PEGASUS, key="tag",
+        #                    value=TOOL_CONFIGS["train"]["tag"])
+
         # Job 1: First step
         job1 = (
             Job("step1", _id=f"step1_{item}", node_label=f"step1_{item}")
@@ -299,25 +354,56 @@ def main():
         epilog="""
 Examples:
   %(prog)s --items foo bar --output workflow.yml
-  %(prog)s --items foo --skip-sites-catalog -e condorpool
+  %(prog)s --items foo -e compute --site-style slurm --queue cpu --project my_lab
 """,
     )
 
     # --- Standard Pegasus arguments (keep these) ---
-    parser.add_argument(
-        "-s",
-        "--skip-sites-catalog",
-        action="store_true",
-        help="Skip site catalog creation",
-    )
+    # Execution site. Every option has a default, so a zero-argument run (the
+    # Pegasus Studio "Run" button) plans on an HTCondor pool; the rest tailor
+    # sites.yml for a batch cluster. dest "execution_site" is what Studio
+    # matches to keep its "Where it runs" choice in sync.
     parser.add_argument(
         "-e",
+        "--execution-site",
         "--execution-site-name",
+        dest="execution_site",
         metavar="STR",
         type=str,
         default="condorpool",
-        help="Execution site name (default: condorpool)",
+        help="Site to plan against (default: condorpool). Hosted catalogs "
+             "(e.g. Unity) call theirs 'compute'.",
     )
+    parser.add_argument(
+        "--site-style",
+        choices=("auto",) + STYLES + ("none",),
+        default="auto",
+        help="auto (default): keep a sites.yml entry or hosted catalog if one "
+             "exists, else add an HTCondor site. condor/slurm: (re)write this "
+             "site's entry. none: leave sites.yml alone.",
+    )
+    parser.add_argument("--queue", metavar="PARTITION",
+                        help="Batch partition/queue jobs submit to")
+    parser.add_argument("--project", metavar="ACCOUNT",
+                        help="Allocation/account charged on a batch site")
+    parser.add_argument("--site-scratch", metavar="DIR",
+                        help="Slurm: shared scratch visible to workers and "
+                             "the submit host (default: ./work)")
+    parser.add_argument("--site-profile", action="append", default=[],
+                        type=parse_profile, metavar="NS:KEY=VALUE",
+                        help="Extra profile on the execution site; repeatable")
+    parser.add_argument("--tag-profile", action="append", default=[],
+                        type=parse_tag_profile, metavar="TAG:NS:KEY=VALUE",
+                        help="Profile for jobs carrying a tag, e.g. "
+                             "gpu:pegasus:queue=gpu; repeatable")
+    parser.add_argument("--shared-filesystem", choices=("auto", "yes", "no"),
+                        default="auto",
+                        help="Let jobs read inputs directly from the submit "
+                             "host. auto: on for Slurm sites, off for HTCondor.")
+    parser.add_argument("--sites-yml", metavar="FILE", default="sites.yml",
+                        help="Local site catalog (default: sites.yml)")
+    parser.add_argument("-s", "--skip-sites-catalog", action="store_true",
+                        help="Deprecated: same as --site-style none")
     parser.add_argument(
         "-o",
         "--output",
@@ -364,23 +450,38 @@ Examples:
     logger.info("MY WORKFLOW GENERATOR")  # [CUSTOMIZE]
     logger.info("=" * 70)
     logger.info(f"Items: {args.items}")
-    logger.info(f"Execution site: {args.execution_site_name}")
+    logger.info(f"Execution site: {args.execution_site}")
     logger.info(f"Output file: {args.output}")
     logger.info("=" * 70)
 
     try:
         workflow = MyWorkflow(dagfile=args.output)
 
-        workflow.create_pegasus_properties()
+        # --- Site catalog and the settings that depend on the site ---
+        if args.skip_sites_catalog:
+            args.site_style = "none"
+        action, style = ensure_sites_yml(
+            args.sites_yml, args.execution_site, workflow.wf_dir,
+            style=args.site_style, queue=args.queue, project=args.project,
+            scratch=args.site_scratch, profiles=args.site_profile,
+            tag_profiles=args.tag_profile)
+        hosted = hosted_catalog()
+        logger.info(f"Site catalog: {args.sites_yml}: {action}"
+                    + (f" (merged over hosted {hosted})" if hosted else ""))
+        if args.shared_filesystem == "auto":
+            bypass = style is not None and style != "condor"
+        else:
+            bypass = args.shared_filesystem == "yes"
+        workflow.bind_workflow_dir = bypass or is_batch_site(style)
+        workflow.worker_package_url = worker_package_url(CONTAINER_PLATFORM)
+        if not workflow.worker_package_url:
+            logger.warning("pegasus-version not found: Pegasus will choose the "
+                           "container's worker package itself (needs curl/wget "
+                           "in the image and internet on the workers)")
 
-        if not args.skip_sites_catalog:
-            workflow.create_sites_catalog(
-                exec_site_name=args.execution_site_name
-            )
-
-        workflow.create_transformation_catalog(
-            exec_site_name=args.execution_site_name
-        )
+        workflow.create_pegasus_properties(
+            sites_yml=args.sites_yml, bypass_input_staging=bypass)
+        workflow.create_transformation_catalog()
         workflow.create_replica_catalog()
         workflow.create_workflow(args)
         workflow.write()
@@ -388,7 +489,7 @@ Examples:
         logger.info(f"\nWorkflow written to {args.output}")
         logger.info(
             f"Submit: pegasus-plan --submit "
-            f"-s {args.execution_site_name} -o local {args.output}"
+            f"-s {args.execution_site} -o local {args.output}"
         )
 
     except Exception as e:
