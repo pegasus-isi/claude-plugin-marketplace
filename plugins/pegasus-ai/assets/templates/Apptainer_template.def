@@ -6,7 +6,7 @@
 #      tnseq-workflow/Apptainer/Tnseq_Container.def
 
 # Bootstrap: docker
-# From: python:3.12-slim   # match the build host where you can — see below
+# From: python:3.13-slim-trixie   # the submit host's release, suite named — see Option C
 #
 # %post
 #     # Unprivileged builds emulate root, and apt then fails to drop privileges
@@ -15,6 +15,8 @@
 #     # Ubuntu bases only.
 #     printf 'APT::Sandbox::User "root";\n' > /etc/apt/apt.conf.d/00-no-sandbox
 #     # Install system dependencies
+#     # Keep curl even if nothing else needs it: pegasus-lite uses it to fetch a
+#     # worker package if this base ever stops matching the submit host.
 #     apt-get update && \
 #         apt-get install -y --no-install-recommends \
 #             wget curl git
@@ -92,15 +94,22 @@
 # See: tnseq-workflow/Apptainer/Tnseq_Container.def
 
 Bootstrap: docker
-# Prefer a base matching the build host's distribution. A base older than the
-# host can be handed the host's libfakeroot.so during %post, which then fails
-# against the container's older libc ("version `GLIBC_2.38' not found") before
-# any command runs. On an Ubuntu 24.04 host, use 24.04 here.
+# Use the submit host's distribution and release, with the suite named
+# explicitly. This matters twice: at build time a base older than the host can
+# be handed the host's libfakeroot.so during %post, which fails against the
+# container's older libc ("version `GLIBC_2.38' not found") before any command
+# runs; at run time Pegasus stages the submit host's worker package into the
+# job, and pegasus-lite rejects it inside a container of a different release
+# ("worker package ... does not seem to match the system x86_64_deb_12"), then
+# needs curl or wget to fetch a matching one. On an Ubuntu 24.04 host use
+# ubuntu:24.04; on a Debian 13 host, debian:trixie-slim or python:3.13-slim-trixie.
 From: ubuntu:24.04
 
 %post
     export DEBIAN_FRONTEND=noninteractive
 
+    # curl stays even if nothing below needs it: pegasus-lite uses it to fetch
+    # a worker package if this base ever stops matching the submit host.
     apt-get update && \
         apt-get install -y --no-install-recommends \
             python3 python3-pip \

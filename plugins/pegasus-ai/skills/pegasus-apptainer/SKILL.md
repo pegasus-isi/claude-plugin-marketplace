@@ -49,17 +49,42 @@ Ask the user (skip questions they've already answered):
 4. **Do any tools need headless/display support?** (FastQC, QUAST, matplotlib without display)
    - If yes → need `xvfb`, `libgl1-mesa-glx`, `libfontconfig1`
 5. **Preferred base image?**
-   - `python:3.12-slim` — lightweight, pip-only
+   - `python:<version>-slim-<suite>` — lightweight, pip-only. Name the suite
+     (`python:3.13-slim-trixie`, not `python:3.13-slim`): the release behind an
+     unsuffixed tag moves, and when it does the image silently stops matching
+     the host.
    - `mambaorg/micromamba:1.5-jammy` — conda solver for complex bioinformatics
-   - `ubuntu:24.04` — apt + pip + manual installs
+   - `ubuntu:24.04` / `debian:<suite>-slim` — apt + pip + manual installs
 
-   **Match the build host's distribution where you can.** A base older than the
-   host is the usual source of glibc trouble at build time: `%post` can be handed
-   the host's `libfakeroot.so`, which then fails against the container's older
-   libc (`version 'GLIBC_2.38' not found`) before a single command runs. Matching
-   the host sidesteps that whole class. Ask what the host runs if you do not
-   know; on Ubuntu 24.04 hosts prefer `ubuntu:24.04` and a `python:3.12`-era
-   slim image over the 22.04/3.8 pairings above.
+   **Match the submit host's distribution. This is a run-time requirement, not
+   only a build-time one.** Ask what the submit host runs if you do not know;
+   in Studio the environment overlay says.
+
+   *At run time* Pegasus stages the submit host's worker package into every
+   job, and pegasus-lite inside the container checks that package's platform
+   (`x86_64_deb_13`, `x86_64_rhel_9`, ...) against the container's OS. On a
+   mismatch it tries to download the matching package, which needs `curl` or
+   `wget` inside the container. A slim base has neither, so the job exits 71
+   before the user's command runs, produces no outputs, and HTCondor holds it
+   with a *transfer* error that points nowhere near the cause:
+
+   ```
+   Warning: worker package pegasus-worker-6.0.0-x86_64_deb_13.tar.gz does not seem to match the system x86_64_deb_12
+   ERROR: Unable to find curl/wget
+   ERROR: Unable to download a worker package for this platform (x86_64_deb_12).
+   PegasusLite: exitcode 71
+   ```
+
+   Two rules follow. The base is the submit host's release, and `%post`
+   installs `curl` regardless, so a future mismatch degrades to a download
+   instead of a dead job. The log's own suggestion,
+   `pegasus.transfer.worker.package.strict = false`, is **not** a fix for a
+   base older than the host: it forces the host's binaries into a container
+   whose libc cannot load them (`version 'GLIBC_2.38' not found`).
+
+   *At build time* the same mismatch shows up differently: `%post` can be
+   handed the host's `libfakeroot.so`, which fails against the container's
+   older libc before a single command runs. Matching the host sidesteps both.
 
 Apptainer bootstraps from these same OCI base images (`Bootstrap: docker` / `From: <image>`) without needing Docker installed anywhere — Apptainer pulls and converts the image itself.
 
@@ -82,13 +107,15 @@ Start from `assets/templates/Apptainer_template.def` and customize:
 
 ```
 Bootstrap: docker
-From: python:3.12-slim   # or ubuntu:24.04 — match the build host
+From: python:3.13-slim-trixie   # the submit host's release, suite named explicitly
 
 %post
-    # System dependencies
+    # System dependencies. curl stays even if nothing below needs it: it is
+    # what pegasus-lite uses to fetch a worker package if the base ever
+    # stops matching the submit host.
     apt-get update && \
         apt-get install -y --no-install-recommends \
-            [packages]
+            curl [packages]
     rm -rf /var/lib/apt/lists/*
 
     # Python dependencies
