@@ -31,9 +31,14 @@ from Pegasus.api import *
 # file). Keeps this generator free of scheduler details.
 sys.path.insert(0, str(Path(__file__).parent.resolve()))
 from custom_sites import (  # noqa: E402
-    STYLES, ensure_sites_yml, hosted_catalog, is_batch_site, parse_profile,
+    HOSTED_SITE, STYLES, ensure_sites_yml, hosted_catalog, is_batch_site, parse_profile,
     parse_tag_profile, worker_package_url,
 )
+
+# Execution site when -e is not given: an HTCondor pool, unless ~/.pegasusrc
+# names a hosted catalog (pegasushub pegasus-site-catalogs), whose one site is
+# HOSTED_SITE ("compute").
+DEFAULT_SITE = "condorpool"
 
 # [CUSTOMIZE] Add any additional imports needed for your workflow
 # Examples: json, csv, glob, datetime, requests, urllib.request
@@ -62,10 +67,12 @@ TOOL_CONFIGS = {
 
 # [CUSTOMIZE] The container's OS, for the Pegasus worker package staged into
 # it (see PEGASUS.md "Worker package in containers"). Must match the image's
-# base, not the submit host: e.g. "x86_64_deb_12" for python:3.11-slim /
-# debian:12, "x86_64_ubuntu_24" for ubuntu:24.04. For a base older than any
-# published package, use "x86_64_rhel_8" (glibc 2.28, runs on Debian 11+).
-CONTAINER_PLATFORM = "x86_64_deb_12"
+# base, not the submit host: "x86_64_ubuntu_24" for ubuntu:24.04 (the
+# Apptainer template's base), "x86_64_deb_13" for debian:trixie-slim /
+# python:3.x-slim-trixie. An unsuffixed python:3.x-slim tag follows Debian's
+# current release, so pin the suite. For a base older than any published
+# package (e.g. python:3.8-slim, Debian 11), use "x86_64_rhel_8" (glibc 2.28).
+CONTAINER_PLATFORM = "x86_64_ubuntu_24"
 
 
 class MyWorkflow:
@@ -360,7 +367,8 @@ Examples:
 
     # --- Standard Pegasus arguments (keep these) ---
     # Execution site. Every option has a default, so a zero-argument run (the
-    # Pegasus Studio "Run" button) plans on an HTCondor pool; the rest tailor
+    # Pegasus Studio "Run" button) plans on an HTCondor pool, or on a hosted
+    # catalog's "compute" when ~/.pegasusrc names one; the rest tailor
     # sites.yml for a batch cluster. dest "execution_site" is what Studio
     # matches to keep its "Where it runs" choice in sync.
     parser.add_argument(
@@ -370,9 +378,10 @@ Examples:
         dest="execution_site",
         metavar="STR",
         type=str,
-        default="condorpool",
-        help="Site to plan against (default: condorpool). Hosted catalogs "
-             "(e.g. Unity) call theirs 'compute'.",
+        default=None,
+        help=f"Site to plan against (default: {HOSTED_SITE!r} when "
+             "~/.pegasusrc names a hosted catalog, which call their site "
+             f"that; otherwise {DEFAULT_SITE!r})",
     )
     parser.add_argument(
         "--site-style",
@@ -440,6 +449,8 @@ Examples:
     # parser.add_argument("--skip-step3", action="store_true")
 
     args = parser.parse_args()
+    if args.execution_site is None:
+        args.execution_site = HOSTED_SITE if hosted_catalog() else DEFAULT_SITE
 
     # --- [CUSTOMIZE] Input validation ---
     # if not args.test and not args.samplesheet:
@@ -468,6 +479,16 @@ Examples:
         hosted = hosted_catalog()
         logger.info(f"Site catalog: {args.sites_yml}: {action}"
                     + (f" (merged over hosted {hosted})" if hosted else ""))
+        if (style is None and hosted and args.execution_site != "local"
+                and args.execution_site != HOSTED_SITE):
+            # Nothing was written for this site, so planning works only if
+            # the hosted catalog happens to define it.
+            logger.warning(
+                f"{args.execution_site!r} is not defined in {args.sites_yml} "
+                f"and hosted catalogs normally define only {HOSTED_SITE!r}: "
+                f"pegasus-plan will fail unless {hosted} has it. Use "
+                f"-e {HOSTED_SITE}, or --site-style condor/slurm to describe "
+                f"{args.execution_site!r}.")
         if args.shared_filesystem == "auto":
             bypass = style is not None and style != "condor"
         else:

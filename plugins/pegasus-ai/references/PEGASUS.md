@@ -187,6 +187,14 @@ most specific first:
 3. Otherwise an HTCondor `condorpool` site — so a zero-argument run (Pegasus
    Studio's Run button) plans with no setup.
 
+The default `-e` follows the same rule: `compute` when `~/.pegasusrc` names a
+hosted catalog, else `condorpool`. A hosted catalog defines only `compute`, so
+never leave `-e condorpool` relying on it: `pegasus-plan` fails with the site
+undefined. `custom_sites.py` writes an overlay (overrides only) solely for a
+site the hosted catalog defines — read from the planner's copy of the hosted
+file when present, else assumed to be `compute` — and a complete entry for any
+other site, and the generator warns when `-e` names a site nothing defines.
+
 Only the requested site's entry is written; a `local` site (scratch and
 `output/` under the workflow directory) is always ensured for `-o local`. The
 generator exposes the knobs as ordinary options (they appear in Studio's run
@@ -229,7 +237,7 @@ kickstart, the pip wheel a static one). Name the container's package instead —
 the documented recipe:
 
 ```python
-# CONTAINER_PLATFORM matches the image base: x86_64_deb_12, x86_64_ubuntu_24, ...
+# CONTAINER_PLATFORM matches the image base: x86_64_ubuntu_24, x86_64_deb_13, ...
 # Older than any published package (e.g. Debian 11 under Pegasus 6.0)?
 # use x86_64_rhel_8 (glibc 2.28).
 tc.add_transformations(Transformation(
@@ -608,7 +616,8 @@ From: ubuntu:22.04
 ./workflow_generator.py [options] --output workflow.yml
 
 # 2. Plan and submit (-s: the site you generated for — condorpool by default,
-#    compute on a Slurm cluster; the generator prints the exact command)
+#    compute with a hosted catalog or on a Slurm cluster; the generator prints
+#    the exact command)
 pegasus-plan --submit -s condorpool -o local workflow.yml
 
 # 3. Monitor
