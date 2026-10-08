@@ -8,14 +8,21 @@ It runs both the base pipeline (extraction, analysis, anomaly detection) and the
 forecasting pipeline (historical data, feature prep, model training, prediction, visualization)
 in parallel after data extraction.
 
+Every argument has a default, so the workflow can be launched from the Pegasus
+Studio GUI with nothing filled in: the defaults run SAGE node W045 over the last
+full day. List arguments also accept the GUI's single comma-separated token
+("a,b,c") in addition to the shell's space-separated form.
+
 Usage:
-    ./workflow_generator_forecast.py --location-ids 2178 \
-                                      --start-date 2024-01-15 \
-                                      --historical-days 90 \
-                                      --output workflow_forecast.yml
+    ./workflow_generator.py                                   # SAGE defaults
+    ./workflow_generator.py --data-source openaq --location-ids 2178 \
+                            --start-date 2024-01-15 \
+                            --historical-days 90 \
+                            --output workflow_forecast.yml
 """
 
 import os
+import subprocess
 import sys
 import logging
 from pathlib import Path
@@ -25,21 +32,155 @@ from datetime import datetime, timedelta
 # Import Pegasus API
 from Pegasus.api import *
 
+# Site-catalog handling shared with the standalone custom_sites.py script.
+sys.path.insert(0, str(Path(__file__).parent.resolve()))
+from custom_sites import (  # noqa: E402
+    HOSTED_SITE, STYLES, TRAIN_TAG, ensure_sites_yml, hosted_catalog,
+    parse_profile,
+)
+
+# Execution site when -e is not given: hosted catalogs (pegasushub
+# pegasus-site-catalogs, named in ~/.pegasusrc) call their site HOSTED_SITE
+# ("compute"); with no hosted catalog the generator adds an HTCondor one.
+DEFAULT_SITE = "condorpool"
+
+# ---------------------------------------------------------------------------
+# Defaults that make the GUI's "Run" usable without any input
+# ---------------------------------------------------------------------------
+
+# SAGE Continuum defaults — a node that publishes air-quality concentrations
+# through the seanshahkarami/air-quality plugin.
+DEFAULT_SAGE_VSN = ["W045"]
+DEFAULT_SAGE_PLUGIN = "registry.sagecontinuum.org/seanshahkarami/air-quality:0.3.0"
+DEFAULT_SAGE_NAMES = ["env.air_quality.conc"]
+
+# OpenAQ defaults. 2178 is the location used throughout this repo's examples.
+DEFAULT_OPENAQ_LOCATION_IDS = [2178]
+
+# Wall-clock budget per tool, in seconds. Batch sites (Slurm through glite)
+# kill a job that exceeds it, so the values are generous; condor pools ignore
+# them. Everything else about where a job runs — scheduler, partition,
+# account, scratch — belongs in the site catalog (see custom_sites.py).
+TOOL_RUNTIME = {
+    "fetch_sage": 1800,
+    "extract_timeseries": 1800,
+    "analyze_pollutants": 1800,
+    "detect_anomalies": 900,
+    "merge": 900,
+    "fetch_historical": 3600,
+    "prepare_features": 1800,
+    "train_model": 3 * 3600,
+    "generate_forecast": 1800,
+    "visualize_forecast": 900,
+}
+
+# Pegasus worker package (kickstart etc.) used *inside* the container, which
+# is Debian 11 (python:3.8-slim) whatever the submit host runs. Pegasus 6.0
+# publishes no deb_11 package; rhel_8 is built against glibc 2.28 and runs on
+# Debian 11's 2.31 (it is also PegasusLite's own fallback). Change this with
+# the container's base image.
+WORKER_PACKAGE_PLATFORM = "x86_64_rhel_8"
+WORKER_PACKAGE_URL = ("https://download.pegasus.isi.edu/pegasus/{v}/"
+                      "pegasus-worker-{v}-" + WORKER_PACKAGE_PLATFORM + ".tar.gz")
+
+
+def planner_version():
+    """Version of the pegasus-plan that will plan this workflow, or None."""
+    try:
+        out = subprocess.run(["pegasus-version"], capture_output=True,
+                             text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    version = out.stdout.strip()
+    return version if out.returncode == 0 and version else None
+
+
+# Named regions for OpenAQ. These are bounding boxes, not hard-coded location
+# IDs: the IDs are resolved live against the OpenAQ v3 /locations endpoint at
+# generation time, so they cannot go stale.
+# Format: (min_lon, min_lat, max_lon, max_lat)
+OPENAQ_REGIONS = {
+    "los-angeles": (-118.668, 33.704, -118.155, 34.337),
+    "bay-area":    (-122.610, 37.200, -121.700, 38.100),
+    "new-york":    (-74.259, 40.477, -73.700, 40.918),
+    "chicago":     (-87.940, 41.644, -87.524, 42.023),
+    "houston":     (-95.789, 29.523, -95.014, 30.110),
+    "denver":      (-105.110, 39.614, -104.600, 39.914),
+    "seattle":     (-122.436, 47.491, -122.224, 47.734),
+    "london":      (-0.510, 51.286, 0.334, 51.692),
+    "delhi":       (76.840, 28.404, 77.348, 28.883),
+    "beijing":     (116.000, 39.700, 116.800, 40.200),
+}
+
+
+def split_list(values, cast=str, flag=""):
+    """Normalise a list argument.
+
+    Accepts the shell form (``--names a b c``) and the Studio GUI form, which
+    sends the whole list as one comma-separated token (``--names a,b,c``).
+    """
+    out = []
+    for value in values or []:
+        for part in str(value).split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                out.append(cast(part))
+            except ValueError:
+                raise ValueError(f"{flag}: cannot parse {part!r} as {cast.__name__}")
+    return out
+
+
+def parse_date(value, flag):
+    """Parse a YYYY-MM-DD date, with an error message the GUI can surface."""
+    try:
+        return datetime.strptime(str(value).strip(), "%Y-%m-%d")
+    except ValueError:
+        raise ValueError(f"{flag}: expected YYYY-MM-DD, got {value!r}")
+
+
+def resolve_openaq_region(region, bbox, max_locations):
+    """Resolve a named region or bbox to a list of OpenAQ location IDs."""
+    if region:
+        if region not in OPENAQ_REGIONS:
+            raise ValueError(
+                f"--openaq-region: unknown region {region!r}. "
+                f"Known: {', '.join(sorted(OPENAQ_REGIONS))}"
+            )
+        bbox = OPENAQ_REGIONS[region]
+
+    sys.path.insert(0, str(Path(__file__).parent.resolve()))
+    from fetch_openaq_catalog import search_locations
+
+    print(f"Resolving OpenAQ location IDs for bbox {bbox}...")
+    df = search_locations(bbox=tuple(bbox))
+    if df.empty:
+        raise ValueError(
+            f"No OpenAQ locations found in bbox {bbox}. "
+            f"Pass --location-ids explicitly, or search with "
+            f"./fetch_openaq_catalog.py --search --bbox {' '.join(str(b) for b in bbox)}"
+        )
+
+    ids = [int(i) for i in df["id"].head(max_locations).tolist()]
+    for _, row in df.head(max_locations).iterrows():
+        print(f"  {row['id']}: {row['name']}")
+    return ids
+
 
 class AirQualityForecastWorkflow:
     wf = None
-    sc = None
     tc = None
     rc = None
     props = None
 
     dagfile = None
     wf_dir = None
-    shared_scratch_dir = None
     local_storage_dir = None
     wf_name = "airquality_forecast"
 
     openaq_catalog = None
+    worker_package_url = None
     openaq_cache_file = "openaq_catalog.csv"
 
     def __init__(
@@ -53,6 +194,7 @@ class AirQualityForecastWorkflow:
         sage_vsn=None,
         sage_plugin=None,
         sage_names=None,
+        sage_default_parameter=None,
         historical_days=90,
         forecast_horizon=24,
         skip_forecast=False,
@@ -60,7 +202,6 @@ class AirQualityForecastWorkflow:
     ):
         self.dagfile = dagfile
         self.wf_dir = str(Path(__file__).parent.resolve())
-        self.shared_scratch_dir = os.path.join(self.wf_dir, "scratch")
         self.local_storage_dir = os.path.join(self.wf_dir, "output")
         self.location_ids = location_ids or []
         self.parameters = parameters if parameters else ['pm25', 'pm10', 'o3', 'no2', 'so2', 'co']
@@ -68,149 +209,237 @@ class AirQualityForecastWorkflow:
         self.end_date = end_date
         self.data_source = data_source
         self.sage_input = sage_input
-        self.sage_vsn = sage_vsn
+        self.sage_vsn = sage_vsn or []
         self.sage_plugin = sage_plugin
         self.sage_names = sage_names
+        self.sage_default_parameter = sage_default_parameter
         self.historical_days = historical_days
         self.forecast_horizon = forecast_horizon
         self.skip_forecast = skip_forecast
         self.historical_start_date = start_date - timedelta(days=historical_days)
 
     def write(self):
-        if self.sc is not None:
-            self.sc.write()
         self.props.write()
         self.rc.write()
         self.tc.write()
         self.wf.write(file=self.dagfile)
 
-    def create_pegasus_properties(self):
+    def create_pegasus_properties(self, sites_yml="sites.yml",
+                                  bypass_input_staging=False):
+        """Planner properties.
+
+        The site catalog itself is custom_sites.py's business; naming an
+        existing sites.yml here lets pegasus-plan find it from any directory.
+        """
         self.props = Properties()
         self.props["pegasus.transfer.threads"] = "16"
-        return
+        # Jobs run inside a Debian 11 container, whatever the submit host is.
+        # Left alone, PegasusLite ships the submit host's worker package and,
+        # on a mismatch, downloads another from inside the container — which
+        # fails where the image has no curl/wget (an unprivileged --fakeroot
+        # build on a cluster cannot apt-get them), and the submit host's
+        # kickstart may need a newer glibc than Debian 11 has. So stage the
+        # container-compatible package named in the transformation catalog
+        # (create_transformation_catalog) and never download. strict=false
+        # covers the host side, where that package is only used to transfer.
+        if self.worker_package_url:
+            self.props["pegasus.transfer.worker.package"] = "true"
+            self.props["pegasus.transfer.worker.package.strict"] = "false"
+            self.props["pegasus.transfer.worker.package.autodownload"] = "false"
+        # Symlink rather than copy when an input already sits on the
+        # execution site. A no-op otherwise, so always on.
+        self.props["pegasus.transfer.links"] = "true"
+        if bypass_input_staging:
+            # Jobs read inputs (notably the .sif image) straight from the
+            # submit host's paths instead of through the staging site. Only
+            # valid where workers share a filesystem with the submit host —
+            # a Slurm cluster, typically; not a condor pool staging over
+            # HTCondor file transfer.
+            self.props["pegasus.transfer.bypass.input.staging"] = "true"
+        if os.path.isfile(sites_yml):
+            self.props["pegasus.catalog.site"] = "YAML"
+            self.props["pegasus.catalog.site.file"] = os.path.abspath(sites_yml)
 
-    def create_sites_catalog(self, exec_site_name="condorpool"):
-        self.sc = SiteCatalog()
+    def create_transformation_catalog(
+        self,
+        container_sif="Apptainer/AirQuality_Forecast_Container.sif",
+        bind_workflow_dir=False,
+    ):
+        """Containers and transformations; nothing here names a site.
 
-        local = Site("local").add_directories(
-            Directory(
-                Directory.SHARED_SCRATCH, self.shared_scratch_dir
-            ).add_file_servers(
-                FileServer("file://" + self.shared_scratch_dir, Operation.ALL)
-            ),
-            Directory(Directory.LOCAL_STORAGE, self.local_storage_dir).add_file_servers(
-                FileServer("file://" + self.local_storage_dir, Operation.ALL)
-            ),
-        )
-
-        exec_site = (
-            Site(exec_site_name)
-            .add_condor_profile(universe="vanilla")
-            .add_pegasus_profile(style="condor")
-        )
-
-        self.sc.add_sites(local, exec_site)
-
-    def create_transformation_catalog(self, exec_site_name="condorpool"):
+        bind_workflow_dir: on a site that stages through its own filesystem
+        (a Slurm cluster, Unity's hosted catalog) or with bypass staging,
+        pegasus.transfer.links stages inputs as symlinks to absolute paths
+        under the workflow directory. PegasusLite starts the container with
+        --no-home and binds only the job directory, so those links dangle
+        inside it and every job dies with kickstart "Unable to execute the
+        specified binary" (exit 127). Binding the workflow directory at its
+        own path makes them resolve. Never on a condor pool: inputs arrive
+        there as copies and the directory does not exist on the workers, so
+        the bind would fail every job.
+        """
         self.tc = TransformationCatalog()
+
+        # Both containers below are backed by the same local Apptainer .sif
+        # (the forecast image already carries the base stack plus PyTorch).
+        # Pegasus stages the file like any other input, so image_site is the
+        # site where the .sif physically lives (the submit host = "local").
+        sif_path = (
+            container_sif
+            if os.path.isabs(container_sif)
+            else os.path.join(self.wf_dir, container_sif)
+        )
+        if not os.path.exists(sif_path):
+            print(f"Warning: Apptainer image not found at {sif_path} — build it "
+                  f"first with: apptainer build {sif_path} "
+                  f"Apptainer/AirQuality_Forecast_Container.def")
+        image_url = "file://" + sif_path
 
         # Base workflow container
         airquality_container = Container(
             "airquality_container",
             container_type=Container.SINGULARITY,
-            image="docker://kthare10/airquality-forecast:latest",
-            image_site="docker_hub",
+            image=image_url,
+            image_site="local",
         )
+        if bind_workflow_dir:
+            airquality_container.add_pegasus_profile(
+                container_arguments=f"--bind {self.wf_dir}")
 
         # Forecast workflow container (with PyTorch)
         forecast_container = Container(
             "airquality_forecast_container",
             container_type=Container.SINGULARITY,
-            image="docker://kthare10/airquality-forecast:latest",
-            image_site="docker_hub",
+            image=image_url,
+            image_site="local",
         )
+        if bind_workflow_dir:
+            forecast_container.add_pegasus_profile(
+                container_arguments=f"--bind {self.wf_dir}")
 
         # Base transformations
         mkdir = Transformation(
             "mkdir", site="local", pfn="/bin/mkdir", is_stageable=False
         )
 
+        # SAGE ingest runs as a job so that sage_data_client only has to exist
+        # inside the container, never on the submit host.
+        fetch_sage = Transformation(
+            "fetch_sage",
+            site="local",
+            pfn=os.path.join(self.wf_dir, "bin/fetch_sage_data.py"),
+            is_stageable=True,
+            container=airquality_container,
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["fetch_sage"]
+        )
+
         extract_timeseries = Transformation(
             "extract_timeseries",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/extract_aqi_timeseries.py"),
             is_stageable=True,
             container=airquality_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["extract_timeseries"]
+        )
 
         analyze_pollutants = Transformation(
             "analyze_pollutants",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/analyze_pollutants.py"),
             is_stageable=True,
             container=airquality_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["analyze_pollutants"]
+        )
 
         detect_anomalies = Transformation(
             "detect_anomalies",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/detect_anomalies.py"),
             is_stageable=True,
             container=airquality_container,
-        ).add_pegasus_profile(memory="1 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="1 GB", runtime=TOOL_RUNTIME["detect_anomalies"]
+        )
 
         merge = Transformation(
             "merge",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/merge.py"),
             is_stageable=True,
             container=airquality_container,
-        ).add_pegasus_profile(memory="1 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="1 GB", runtime=TOOL_RUNTIME["merge"]
+        )
 
         # Forecast transformations
         fetch_historical = Transformation(
             "fetch_historical",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/fetch_historical_data.py"),
             is_stageable=True,
             container=forecast_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["fetch_historical"]
+        )
 
         prepare_features = Transformation(
             "prepare_features",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/prepare_features.py"),
             is_stageable=True,
             container=forecast_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["prepare_features"]
+        )
 
         train_model = Transformation(
             "train_model",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/train_forecast_model.py"),
             is_stageable=True,
             container=forecast_container,
-        ).add_pegasus_profile(memory="4 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="4 GB", runtime=TOOL_RUNTIME["train_model"]
+        )
 
         generate_forecast = Transformation(
             "generate_forecast",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/generate_forecast.py"),
             is_stageable=True,
             container=forecast_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["generate_forecast"]
+        )
 
         visualize_forecast = Transformation(
             "visualize_forecast",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/visualize_forecast.py"),
             is_stageable=True,
             container=forecast_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["visualize_forecast"]
+        )
 
         self.tc.add_containers(airquality_container, forecast_container)
+        if self.worker_package_url:
+            self.tc.add_transformations(
+                Transformation(
+                    "worker",
+                    namespace="pegasus",
+                    site="local",
+                    pfn=self.worker_package_url,
+                    is_stageable=True,
+                    arch=Arch.X86_64,
+                    os_type=OS.LINUX,
+                )
+            )
         self.tc.add_transformations(
-            mkdir, extract_timeseries, analyze_pollutants, detect_anomalies, merge,
+            mkdir, fetch_sage, extract_timeseries, analyze_pollutants, detect_anomalies, merge,
             fetch_historical, prepare_features, train_model, generate_forecast, visualize_forecast
         )
 
@@ -236,130 +465,29 @@ class AirQualityForecastWorkflow:
         self.openaq_catalog = df
         return True
 
-    def load_sage_catalog(self):
-        """Load SAGE data via JSONL file or sage_data_client and convert to catalog CSV."""
-        def map_name_to_parameter(name: str):
-            if name in ("env.air_quality.conc", "env.pm25"):
-                return "pm25"
-            if name in ("env.pm10",):
-                return "pm10"
-            return None
-
-        rows = []
-
-        if self.sage_input:
-            input_path = Path(self.sage_input)
-            if not input_path.exists():
-                print(f"Error: SAGE input file not found: {input_path}")
-                return False
-
-            import json
-            with open(input_path, "r") as handle:
-                for line in handle:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        record = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-
-                    meta = record.get("meta", {})
-                    if self.sage_vsn and meta.get("vsn") != self.sage_vsn:
-                        continue
-                    if self.sage_plugin and meta.get("plugin") != self.sage_plugin:
-                        continue
-
-                    name = record.get("name")
-                    if self.sage_names and name not in self.sage_names:
-                        continue
-
-                    parameter = map_name_to_parameter(name)
-                    if not parameter:
-                        continue
-
-                    location = meta.get("vsn") or meta.get("node") or "unknown"
-                    rows.append({
-                        "location": location,
-                        "location_id": location,
-                        "parameter": parameter,
-                        "value": record.get("value"),
-                        "unit": record.get("unit", "unknown"),
-                        "datetime": record.get("timestamp"),
-                    })
-        else:
-            try:
-                import sage_data_client
-            except ImportError:
-                print("Error: sage_data_client is not available. Install it or use --sage-input.")
-                return False
-
-            start = self.start_date.strftime("%Y-%m-%dT%H:%M:%SZ")
-            end = self.end_date.strftime("%Y-%m-%dT%H:%M:%SZ")
-            filter_dict = {}
-            if self.sage_plugin:
-                filter_dict["plugin"] = self.sage_plugin
-            if self.sage_vsn:
-                filter_dict["vsn"] = self.sage_vsn
-            if self.sage_names and len(self.sage_names) == 1:
-                filter_dict["name"] = self.sage_names[0]
-
-            df = sage_data_client.query(start=start, end=end, filter=filter_dict)
-            if df is None or df.empty:
-                print("No SAGE measurements returned for the specified filters.")
-                return False
-
-            if self.sage_names and len(self.sage_names) > 1:
-                df = df[df["name"].isin(self.sage_names)]
-
-            for _, record in df.iterrows():
-                name = record.get("name")
-                parameter = map_name_to_parameter(name)
-                if not parameter:
-                    continue
-
-                location = record.get("meta.vsn") or record.get("meta.node") or "unknown"
-                rows.append({
-                    "location": location,
-                    "location_id": location,
-                    "parameter": parameter,
-                    "value": record.get("value"),
-                    "unit": record.get("unit", "unknown"),
-                    "datetime": record.get("timestamp"),
-                })
-
-        if not rows:
-            print("No SAGE measurements matched the provided filters.")
-            return False
-
-        import pandas as pd
-        df = pd.DataFrame(rows)
-        df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce", utc=True)
-        df = df.dropna(subset=["datetime"])
-        if df.empty:
-            print("No valid SAGE measurements after date parsing.")
-            return False
-
-        df["timestamp"] = df["datetime"].astype(int) // 10**9
-        df["hour_bucket"] = df["datetime"].dt.floor("h")
-
-        output_path = os.path.join(self.wf_dir, self.openaq_cache_file)
-        df.to_csv(output_path, index=False)
-        self.openaq_catalog = df
-        return True
-
     def create_replica_catalog(self):
+        """Register the workflow's generation-time inputs.
+
+        SAGE data is fetched by the ``fetch_sage`` job at run time, so the only
+        thing to register for that source is an optional pre-downloaded JSONL
+        dump. OpenAQ is still fetched here, because the location *names* it
+        returns determine the shape of the DAG.
+        """
         self.rc = ReplicaCatalog()
 
+        if self.data_source == "sage":
+            if self.sage_input:
+                input_path = Path(self.sage_input).resolve()
+                if not input_path.exists():
+                    print(f"Error: SAGE input file not found: {input_path}")
+                    sys.exit(1)
+                self.rc.add_replica("local", input_path.name, "file://" + str(input_path))
+            return
+
         if self.openaq_catalog is None:
-            if self.data_source == "sage":
-                if not self.load_sage_catalog():
-                    print("Failed to load SAGE data")
-                    sys.exit(1)
-            else:
-                if not self.fetch_openaq_catalog():
-                    print("Failed to fetch OpenAQ data")
-                    sys.exit(1)
+            if not self.fetch_openaq_catalog():
+                print("Failed to fetch OpenAQ data")
+                sys.exit(1)
 
         self.rc.add_replica(
             "local",
@@ -370,22 +498,22 @@ class AirQualityForecastWorkflow:
     def create_workflow(self):
         self.wf = Workflow(self.wf_name, infer_dependencies=True)
 
-        catalog_file = File("openaq_catalog.csv")
-
-        if self.openaq_catalog is None or self.openaq_catalog.empty:
-            print("Error: No catalog data available. Run fetch_openaq_catalog first.")
-            return
-
-        # Get unique location names for each location ID (OpenAQ) or from SAGE data
+        # Get unique location names for each location ID (OpenAQ) or, for SAGE,
+        # straight from the requested VSNs — the SAGE catalog does not exist yet
+        # at generation time, it is produced by the fetch_sage jobs.
         location_map = {}
         if self.data_source == "sage":
-            for loc_name in sorted(self.openaq_catalog["location"].unique()):
-                safe_name = loc_name.replace(' ', '_').replace('-', '_').replace('/', '_')
-                location_map[loc_name] = {
+            for vsn in self.sage_vsn:
+                safe_name = vsn.replace(' ', '_').replace('-', '_').replace('/', '_')
+                location_map[vsn] = {
                     "name": safe_name,
-                    "display_name": loc_name
+                    "display_name": vsn
                 }
         else:
+            if self.openaq_catalog is None or self.openaq_catalog.empty:
+                print("Error: No catalog data available. Run fetch_openaq_catalog first.")
+                return
+
             for loc_id in self.location_ids:
                 loc_data = self.openaq_catalog[self.openaq_catalog['location_id'] == loc_id]
                 if not loc_data.empty:
@@ -436,6 +564,51 @@ class AirQualityForecastWorkflow:
             )
             self.wf.add_jobs(mkdir_job)
 
+            # ===== INGEST =====
+
+            if self.data_source == "sage":
+                # One fetch job per node. sage_data_client lives in the
+                # container, so nothing SAGE-specific is needed on the submit
+                # host.
+                catalog_file = File(f"catalog/{location}_catalog.csv")
+                fetch_args = (
+                    f"--vsn {display_name} "
+                    f"--start {self.start_date.strftime('%Y-%m-%dT%H:%M:%SZ')} "
+                    f"--end {self.end_date.strftime('%Y-%m-%dT%H:%M:%SZ')} "
+                    f"--output catalog/{location}_catalog.csv"
+                )
+                if self.sage_plugin:
+                    fetch_args += f" --plugin {self.sage_plugin}"
+                if self.sage_names:
+                    fetch_args += f" --names {' '.join(self.sage_names)}"
+                if self.sage_default_parameter:
+                    fetch_args += f" --default-parameter {self.sage_default_parameter}"
+
+                fetch_sage_job = Job(
+                    "fetch_sage",
+                    _id=f"fetch_sage_{location}",
+                    node_label=f"fetch_sage_{location}",
+                )
+                if self.sage_input:
+                    sage_input_file = File(Path(self.sage_input).name)
+                    fetch_args += f" --input {sage_input_file.lfn}"
+                    fetch_sage_job.add_inputs(sage_input_file)
+
+                (
+                    fetch_sage_job
+                    .add_args(fetch_args)
+                    .add_outputs(catalog_file, stage_out=False, register_replica=False)
+                    .add_dagman_profile(retry="2")
+                    .add_pegasus_profiles(label=location)
+                )
+                self.wf.add_jobs(fetch_sage_job)
+                self.wf.add_dependency(mkdir_job, children=[fetch_sage_job])
+            else:
+                # OpenAQ is fetched at generation time — the location names it
+                # returns are what the DAG is built around.
+                catalog_file = File("openaq_catalog.csv")
+                fetch_sage_job = None
+
             # ===== BASE PIPELINE =====
 
             # Extract time series (shared by both pipelines)
@@ -446,13 +619,15 @@ class AirQualityForecastWorkflow:
                     _id=f"extract_{location}",
                     node_label=f"extract_{location}",
                 )
-                .add_args(f"-i openaq_catalog.csv -o timeseries/{location}")
+                .add_args(f"-i {catalog_file.lfn} -o timeseries/{location}")
                 .add_inputs(catalog_file)
                 .add_outputs(timeseries_file, stage_out=False, register_replica=False)
                 .add_pegasus_profiles(label=location)
             )
             self.wf.add_jobs(extract_job)
             self.wf.add_dependency(mkdir_job, children=[extract_job])
+            if fetch_sage_job is not None:
+                self.wf.add_dependency(fetch_sage_job, children=[extract_job])
 
             # Analyze pollutants
             analysis_png = File(f"analysis/{location}/{location}_analysis.png")
@@ -568,6 +743,11 @@ class AirQualityForecastWorkflow:
                     stage_out=True, register_replica=False
                 )
                 .add_pegasus_profiles(label=f"{location}_forecast")
+                # Site-tunable via the site catalog's "train" tag (partition,
+                # longer runtime, ...): see custom_sites.py --train.
+                # (add_profiles, not add_pegasus_profile(tag=...): the keyword
+                # only exists in Pegasus >= 5.1.3dev's Python API.)
+                .add_profiles(Namespace.PEGASUS, key="tag", value=TRAIN_TAG)
             )
             self.wf.add_jobs(train_job)
             self.wf.add_dependency(prepare_job, children=[train_job])
@@ -643,22 +823,117 @@ class AirQualityForecastWorkflow:
             print("  Forecast pipeline: fetch historical → prepare features → train LSTM → forecast → visualize")
 
 
+def setup_site_catalog(args, wf_dir):
+    """Ensure the site catalog can plan args.execution_site; return its style.
+
+    Defaults work untouched (an HTCondor site is added if nothing defines
+    the requested one), a sites.yml or hosted catalog someone provided wins,
+    and --site-style/--queue/--project/... tailor it for a batch cluster.
+    """
+    action, style = ensure_sites_yml(
+        args.sites_yml, args.execution_site, wf_dir,
+        style=args.site_style, queue=args.queue, project=args.project,
+        scratch=args.site_scratch, profiles=args.site_profile,
+        train=args.train_profile)
+    hosted = hosted_catalog()
+    print(f"Site catalog: {args.sites_yml}: {action}"
+          + (f" (merged over hosted {hosted})" if hosted else ""))
+    if style is None and hosted:
+        print(f"  The hosted catalog {hosted} decides how {args.execution_site!r} "
+              "submits; hosted catalogs name their site 'compute'.")
+        if args.execution_site != HOSTED_SITE:
+            # Nothing was written for this site, so planning works only if
+            # the hosted catalog happens to define it.
+            print(f"Warning: {args.execution_site!r} is not defined in "
+                  f"{args.sites_yml} and hosted catalogs normally define only "
+                  f"{HOSTED_SITE!r}: pegasus-plan will fail unless {hosted} has "
+                  f"it. Use -e {HOSTED_SITE}, or --site-style condor/slurm to "
+                  f"describe {args.execution_site!r}.")
+    return style
+
+
 if __name__ == "__main__":
     parser = ArgumentParser(description="Pegasus Air Quality Forecast Workflow")
 
+    # --- Execution site. The workflow states only cores/memory/runtime and
+    # a "train" tag; these options shape the site catalog (custom_sites.py).
+    parser.add_argument(
+        "-e",
+        "--execution-site",
+        "--execution-site-name",
+        dest="execution_site",
+        metavar="STR",
+        type=str,
+        default=None,
+        help="Site to plan against (default: 'compute' when ~/.pegasusrc "
+             "names a hosted catalog such as Unity, which call their site "
+             "that; otherwise 'condorpool')",
+    )
+    parser.add_argument(
+        "--site-style",
+        choices=("auto",) + STYLES + ("none",),
+        default="auto",
+        help="How the execution site is described in sites.yml. auto (default): "
+             "keep a sites.yml entry or hosted catalog if one exists, else add "
+             "an HTCondor site. condor/slurm: (re)write that site's entry. "
+             "none: leave sites.yml alone.",
+    )
+    parser.add_argument(
+        "--queue",
+        metavar="PARTITION",
+        help="Batch partition/queue jobs submit to (required for "
+             "--site-style slurm without a hosted catalog)",
+    )
+    parser.add_argument(
+        "--project",
+        metavar="ACCOUNT",
+        help="Allocation/account charged on a batch site",
+    )
+    parser.add_argument(
+        "--site-scratch",
+        metavar="DIR",
+        help="Slurm only: shared scratch visible to workers and the submit "
+             "host (default: ./work)",
+    )
+    parser.add_argument(
+        "--site-profile",
+        action="append",
+        default=[],
+        type=parse_profile,
+        metavar="NS:KEY=VALUE",
+        help="Extra profile on the execution site, e.g. "
+             "pegasus:glite.arguments=--constraint=avx512; repeatable",
+    )
+    parser.add_argument(
+        "--train-profile",
+        action="append",
+        default=[],
+        type=parse_profile,
+        metavar="NS:KEY=VALUE",
+        help="Profile for the LSTM training jobs only (the 'train' tag), e.g. "
+             "pegasus:queue=long or pegasus:runtime=21600; repeatable",
+    )
+    parser.add_argument(
+        "--shared-filesystem",
+        choices=("auto", "yes", "no"),
+        default="auto",
+        help="Let jobs read inputs (incl. the container image) directly from "
+             "the submit host instead of via staging. auto (default): on for a "
+             "Slurm site, off for HTCondor, which stages over file transfer.",
+    )
+    parser.add_argument(
+        "--sites-yml",
+        metavar="FILE",
+        type=str,
+        default="sites.yml",
+        help="Local site catalog (default: sites.yml). Named in the generated "
+             "properties, so pegasus-plan finds it from any directory.",
+    )
     parser.add_argument(
         "-s",
         "--skip-sites-catalog",
         action="store_true",
-        help="Skip site catalog creation",
-    )
-    parser.add_argument(
-        "-e",
-        "--execution-site-name",
-        metavar="STR",
-        type=str,
-        default="condorpool",
-        help="Execution site name (default: condorpool)",
+        help="Deprecated: same as --site-style none",
     )
     parser.add_argument(
         "-o",
@@ -671,33 +946,59 @@ if __name__ == "__main__":
     parser.add_argument(
         "--location-ids",
         metavar="INT",
-        type=int,
-        required=False,
+        type=str,
         nargs="+",
-        help="OpenAQ location IDs (use fetch_openaq_catalog.py --search to find IDs)",
+        default=[str(i) for i in DEFAULT_OPENAQ_LOCATION_IDS],
+        help="OpenAQ location IDs, space- or comma-separated (default: "
+             f"{','.join(str(i) for i in DEFAULT_OPENAQ_LOCATION_IDS)}). "
+             "Ignored when --openaq-region or --openaq-bbox is given. "
+             "Find more with ./fetch_openaq_catalog.py --search",
+    )
+    parser.add_argument(
+        "--openaq-region",
+        choices=sorted(OPENAQ_REGIONS),
+        default=None,
+        help="Pick OpenAQ locations by named region instead of by ID; the IDs "
+             "are resolved live against the OpenAQ API",
+    )
+    parser.add_argument(
+        "--openaq-bbox",
+        metavar="FLOAT",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Pick OpenAQ locations inside an arbitrary bounding box: "
+             "min_lon min_lat max_lon max_lat (space- or comma-separated)",
+    )
+    parser.add_argument(
+        "--openaq-max-locations",
+        metavar="INT",
+        type=int,
+        default=3,
+        help="How many locations to take from a region/bbox search (default: 3)",
     )
     parser.add_argument(
         "--start-date",
         metavar="STR",
-        type=lambda s: datetime.strptime(s, "%Y-%m-%d"),
-        required=True,
-        help="Start date (example: '2024-01-15')",
+        type=str,
+        default=None,
+        help="Start date, YYYY-MM-DD (default: yesterday, UTC)",
     )
     parser.add_argument(
         "--end-date",
         metavar="STR",
-        type=lambda s: datetime.strptime(s, "%Y-%m-%d"),
+        type=str,
         default=None,
-        help="End date (default: Start date + 1 day)",
+        help="End date, YYYY-MM-DD (default: start date + 1 day)",
     )
     parser.add_argument(
         "--parameters",
         metavar="STR",
         type=str,
         nargs="+",
-        choices=['pm25', 'pm10', 'o3', 'no2', 'so2', 'co'],
         default=None,
-        help="Parameters to analyze (default: all)",
+        help="Parameters to analyze, space- or comma-separated, from "
+             "pm25 pm10 o3 no2 so2 co (default: all)",
     )
     parser.add_argument(
         "--historical-days",
@@ -715,34 +1016,54 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--data-source",
-        choices=["openaq", "sage"],
-        default="openaq",
-        help="Data source (default: openaq)",
+        choices=["sage", "openaq"],
+        default="sage",
+        help="Data source (default: sage). SAGE needs no API key and is "
+             "fetched by an in-container job; openaq needs OPENAQ_API_KEY set "
+             "on the submit host",
     )
     parser.add_argument(
         "--sage-input",
         type=str,
         default=None,
-        help="Path to SAGE JSONL data file (required when data-source is sage)",
+        help="Optional pre-downloaded SAGE JSONL dump; staged in and read by "
+             "the fetch_sage job instead of querying the SAGE API",
     )
     parser.add_argument(
         "--sage-vsn",
         type=str,
-        default=None,
-        help="Filter SAGE data by VSN (optional)",
+        nargs="+",
+        default=list(DEFAULT_SAGE_VSN),
+        help="SAGE node VSNs, space- or comma-separated. One fetch job and one "
+             f"pipeline per node (default: {','.join(DEFAULT_SAGE_VSN)})",
     )
     parser.add_argument(
         "--sage-plugin",
         type=str,
-        default=None,
-        help="Filter SAGE data by plugin (optional)",
+        default=DEFAULT_SAGE_PLUGIN,
+        help=f"Filter SAGE data by plugin (default: {DEFAULT_SAGE_PLUGIN})",
     )
     parser.add_argument(
         "--sage-names",
         type=str,
         nargs="+",
+        default=list(DEFAULT_SAGE_NAMES),
+        help="SAGE measurement names, space- or comma-separated "
+             f"(default: {','.join(DEFAULT_SAGE_NAMES)})",
+    )
+    parser.add_argument(
+        "--sage-default-parameter",
+        choices=['pm25', 'pm10', 'o3', 'no2', 'so2', 'co'],
         default=None,
-        help="Filter SAGE data by measurement names (optional)",
+        help="Pollutant to assign to SAGE measurement names that the fetch job "
+             "does not recognise (default: skip unrecognised names)",
+    )
+    parser.add_argument(
+        "--container-sif",
+        type=str,
+        default="Apptainer/AirQuality_Forecast_Container.sif",
+        help="Path to the Apptainer .sif image, absolute or relative to the "
+             "workflow directory (default: Apptainer/AirQuality_Forecast_Container.sif)",
     )
     parser.add_argument(
         "--skip-forecast",
@@ -751,35 +1072,87 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
-    if not args.end_date:
-        args.end_date = args.start_date + timedelta(days=1)
-
-    print("=" * 70)
-    print("AIR QUALITY FORECAST WORKFLOW GENERATOR")
-    print("=" * 70)
-    print(f"Data source: {args.data_source}")
-    if args.data_source == "openaq":
-        print(f"Location IDs: {args.location_ids}")
-    else:
-        print(f"SAGE input: {args.sage_input}")
-    print(f"Analysis period: {args.start_date.date()} to {args.end_date.date()}")
-    print(f"Historical training data: {args.historical_days} days")
-    print(f"Forecast horizon: {args.forecast_horizon} hours")
-    print(f"Execution site: {args.execution_site_name}")
-    print("=" * 70)
+    if args.execution_site is None:
+        args.execution_site = HOSTED_SITE if hosted_catalog() else DEFAULT_SITE
 
     try:
-        if args.data_source == "openaq" and not args.location_ids:
-            raise ValueError("--location-ids is required when data-source is openaq")
-        if args.data_source == "sage" and not args.sage_input:
-            try:
-                import sage_data_client  # noqa: F401
-            except ImportError:
-                raise ValueError("--sage-input is required when data-source is sage unless sage_data_client is installed")
-        if args.data_source == "sage" and not args.skip_forecast:
-            print("Warning: SAGE data does not include OpenAQ history. Skipping forecast pipeline.")
-            args.skip_forecast = True
+        # --- normalise list arguments (accept the GUI's comma form) ---
+        args.sage_vsn = split_list(args.sage_vsn, str, "--sage-vsn")
+        args.sage_names = split_list(args.sage_names, str, "--sage-names")
+        args.location_ids = split_list(args.location_ids, int, "--location-ids")
+        if args.parameters:
+            args.parameters = split_list(args.parameters, str, "--parameters")
+            unknown = set(args.parameters) - {'pm25', 'pm10', 'o3', 'no2', 'so2', 'co'}
+            if unknown:
+                raise ValueError(
+                    f"--parameters: unknown parameter(s) {', '.join(sorted(unknown))}"
+                )
+        if args.openaq_bbox:
+            args.openaq_bbox = split_list(args.openaq_bbox, float, "--openaq-bbox")
+            if len(args.openaq_bbox) != 4:
+                raise ValueError(
+                    "--openaq-bbox: expected 4 values (min_lon min_lat max_lon max_lat)"
+                )
+
+        # --- dates: default to the last full UTC day ---
+        if args.start_date:
+            args.start_date = parse_date(args.start_date, "--start-date")
+        else:
+            today = datetime.utcnow().replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            args.start_date = today - timedelta(days=1)
+            print(f"No --start-date given, defaulting to {args.start_date.date()}")
+
+        if args.end_date:
+            args.end_date = parse_date(args.end_date, "--end-date")
+        else:
+            args.end_date = args.start_date + timedelta(days=1)
+
+        if args.end_date <= args.start_date:
+            raise ValueError("--end-date must be after --start-date")
+
+        # --- source-specific validation ---
+        if args.data_source == "sage":
+            if not args.sage_vsn:
+                raise ValueError("--sage-vsn: at least one node VSN is required")
+            if not args.skip_forecast:
+                print("Note: SAGE has no OpenAQ history endpoint — "
+                      "skipping the LSTM forecast pipeline.")
+                args.skip_forecast = True
+        else:
+            if args.openaq_region or args.openaq_bbox:
+                args.location_ids = resolve_openaq_region(
+                    args.openaq_region, args.openaq_bbox, args.openaq_max_locations
+                )
+            if not args.location_ids:
+                raise ValueError(
+                    "--location-ids is required when --data-source is openaq "
+                    "(or use --openaq-region / --openaq-bbox)"
+                )
+            if not os.environ.get("OPENAQ_API_KEY"):
+                raise ValueError(
+                    "OPENAQ_API_KEY is not set. Export it before generating an "
+                    "OpenAQ workflow, or use --data-source sage (the default), "
+                    "which needs no key."
+                )
+
+        print("=" * 70)
+        print("AIR QUALITY FORECAST WORKFLOW GENERATOR")
+        print("=" * 70)
+        print(f"Data source: {args.data_source}")
+        if args.data_source == "openaq":
+            print(f"Location IDs: {args.location_ids}")
+        else:
+            print(f"SAGE nodes: {args.sage_vsn}")
+            print(f"SAGE plugin: {args.sage_plugin}")
+            print(f"SAGE names: {args.sage_names}")
+            print(f"SAGE input: {args.sage_input or '(live API query)'}")
+        print(f"Analysis period: {args.start_date.date()} to {args.end_date.date()}")
+        print(f"Historical training data: {args.historical_days} days")
+        print(f"Forecast horizon: {args.forecast_horizon} hours")
+        print(f"Execution site: {args.execution_site}")
+        print("=" * 70)
 
         workflow = AirQualityForecastWorkflow(
             location_ids=args.location_ids,
@@ -791,6 +1164,7 @@ if __name__ == "__main__":
             sage_vsn=args.sage_vsn,
             sage_plugin=args.sage_plugin,
             sage_names=args.sage_names,
+            sage_default_parameter=args.sage_default_parameter,
             historical_days=args.historical_days,
             forecast_horizon=args.forecast_horizon,
             skip_forecast=args.skip_forecast,
@@ -798,19 +1172,45 @@ if __name__ == "__main__":
         )
 
         print("\nGenerating workflow...")
-        workflow.create_pegasus_properties()
+        if args.skip_sites_catalog:
+            args.site_style = "none"
+        style = setup_site_catalog(args, workflow.wf_dir)
+        if args.shared_filesystem == "auto":
+            bypass = style is not None and style != "condor"
+        else:
+            bypass = args.shared_filesystem == "yes"
+        # A site that is not a condor pool stages through its own filesystem
+        # (an unknown style over a hosted catalog counts: hosted catalogs are
+        # batch sites), and then staged inputs are symlinks into wf_dir.
+        batch_site = (style not in (None, "condor")
+                      or (style is None and hosted_catalog() is not None))
+        bind_wf = batch_site or bypass
+        print(f"Input staging: {'bypassed (shared filesystem)' if bypass else 'via staging site'}"
+              + (f"; containers bind {workflow.wf_dir}" if bind_wf else ""))
+        version = planner_version()
+        if version:
+            workflow.worker_package_url = WORKER_PACKAGE_URL.format(v=version)
+            print(f"Worker package: {WORKER_PACKAGE_PLATFORM} for Pegasus {version} "
+                  "(staged into the container, no in-job download)")
+        else:
+            print("Warning: pegasus-version not found; Pegasus will pick the "
+                  "container's worker package itself (needs curl/wget in the "
+                  "image and internet on the workers)")
+        workflow.create_pegasus_properties(
+            sites_yml=args.sites_yml, bypass_input_staging=bypass)
 
-        if not args.skip_sites_catalog:
-            workflow.create_sites_catalog(exec_site_name=args.execution_site_name)
-
-        workflow.create_transformation_catalog(exec_site_name=args.execution_site_name)
+        workflow.create_transformation_catalog(
+            container_sif=args.container_sif,
+            bind_workflow_dir=bind_wf,
+        )
         workflow.create_replica_catalog()
         workflow.create_workflow()
         workflow.write()
 
         print(f"\n✓ Workflow written to {args.output}")
         print(f"\nTo submit the workflow:")
-        print(f"  pegasus-plan --submit -s {args.execution_site_name} -o local {args.output}")
+        print(f"  pegasus-plan --submit -s {args.execution_site} "
+              f"-o local {args.output}")
 
     except Exception as e:
         print(f"\n✗ Error creating workflow: {e}", file=sys.stderr)

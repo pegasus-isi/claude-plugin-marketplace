@@ -119,7 +119,7 @@ Start from `assets/templates/workflow_generator_template.py` and customize:
 2. **`wf_name`**: `"{pipeline_name}"`
 3. **`__init__`**: Add pipeline-specific parameters
 4. **`create_transformation_catalog`**: Register one `Transformation` per wrapper script, on `site="local"`, with memory, cores and a generous `runtime` (seconds) in `TOOL_CONFIGS`; give tools with unusual needs (GPU, long training) a `tag`
-4a. **`CONTAINER_PLATFORM`**: set it to the container image's base OS (e.g. `x86_64_deb_12` for `python:3.11-slim`) — it selects the worker package staged into the container
+4a. **`CONTAINER_PLATFORM`**: set it to the container image's base OS (e.g. `x86_64_ubuntu_24` for `ubuntu:24.04`, `x86_64_deb_13` for `python:3.11-slim-trixie`; `x86_64_rhel_8` for a base older than any published package, such as `python:3.8-slim`) — it selects the worker package staged into the container
 4b. **Copy `assets/templates/custom_sites.py`** unchanged next to `workflow_generator.py`. Do not write a `create_sites_catalog()`: sites come from `custom_sites.ensure_sites_yml()`, which plans on HTCondor by default and on Slurm with `--site-style slurm` (PEGASUS.md "Portable Sites")
 5. **`create_replica_catalog`**: Register input files — local paths or direct
    URLs as PFNs (a URL PFN is staged by Pegasus itself; no fetch job needed) —
@@ -274,7 +274,9 @@ pegasus-plan --dir submit --sites condorpool --output-sites local workflow.yml
 ```
 
 `--sites condorpool` matches the generator's default site; the generator
-writes `sites.yml` with it, so planning needs no other setup. To check the
+writes `sites.yml` with it, so planning needs no other setup. (With a hosted
+catalog in `~/.pegasusrc` the default site is `compute` — plan with
+`--sites compute`.) To check the
 Slurm variant too, generate with `-e compute --site-style slurm --queue cpu`
 and plan with `--sites compute`.
 
