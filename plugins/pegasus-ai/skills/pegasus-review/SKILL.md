@@ -112,7 +112,8 @@ ERROR if it is meant for clusters; flag each item:
 - [ ] **ERROR** No scheduler details in the workflow: no ClassAd `requirements`, `+Attribute`s, partitions, accounts or GPU model/VRAM constraints on transformations or jobs. Unusual needs are expressed as a Pegasus tag (`add_profiles(Namespace.PEGASUS, key="tag", value=...)`) that the site catalog maps
 - [ ] **ERROR** `pegasus.transfer.bypass.input.staging` is not set unconditionally — only for batch/Slurm sites (it breaks condor pools that stage over HTCondor file transfer)
 - [ ] **ERROR** Containers bind the workflow directory (`container_arguments="--bind <wf_dir>"`) on batch sites only — never on a condor pool. Without it Slurm jobs die with exit 127 "Unable to execute the specified binary"
-- [ ] **ERROR** The `-e` default is not a fixed `condorpool`: it is `HOSTED_SITE` ("compute") when `hosted_catalog()` is set, else the workflow's default site. Hosted catalogs define only `compute`, so a fixed `condorpool` fails `pegasus-plan` for anyone with a hosted catalog in `~/.pegasusrc`
+- [ ] **ERROR** The `-e` default is `HOSTED_SITE` ("compute"), never `condorpool`. Hosted catalogs define only `compute`, so a `condorpool` default fails `pegasus-plan` for anyone using one; with no hosted catalog, `custom_sites.py` writes `compute` as an HTCondor pool
+- [ ] **WARNING** The generator offers `-s/--hosted-site-catalog FILE` and writes it to `pegasus.properties` as `pegasus.catalog.site.repo.file`, passing it to `ensure_sites_yml(hosted=...)` and `is_batch_site(style, hosted)` — so the workflow records which hosted catalog it plans against instead of relying on `~/.pegasusrc`
 - [ ] **WARNING** Containerized workflows name the container's worker package (`pegasus::worker`, platform matching the image base, version from `pegasus-version`) with `worker.package=true`, `strict=false`, `autodownload=false`
 - [ ] **SUGGESTION** `pegasus.transfer.links=true` is set
 

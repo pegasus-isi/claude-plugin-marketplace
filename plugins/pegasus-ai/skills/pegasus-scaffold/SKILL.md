@@ -270,15 +270,14 @@ mind that wrote the bug. Finish by having the planner read it instead:
 
 ```bash
 python3 workflow_generator.py <args>          # writes workflow.yml + the catalogs
-pegasus-plan --dir submit --sites condorpool --output-sites local workflow.yml
+pegasus-plan --dir submit --sites compute --output-sites local workflow.yml
 ```
 
-`--sites condorpool` matches the generator's default site; the generator
-writes `sites.yml` with it, so planning needs no other setup. (With a hosted
-catalog in `~/.pegasusrc` the default site is `compute` — plan with
-`--sites compute`.) To check the
-Slurm variant too, generate with `-e compute --site-style slurm --queue cpu`
-and plan with `--sites compute`.
+`--sites compute` matches the generator's default site. With no hosted
+catalog the generator writes `compute` to `sites.yml` as an HTCondor pool, so
+planning needs no other setup; with `-s unity.yml` (or one in `~/.pegasusrc`)
+the hosted catalog defines it. To check the Slurm variant too, generate with
+`--site-style slurm --queue cpu` and plan the same way.
 
 Planning is local, takes seconds, needs no container built and no pool running.
 It resolves every file against its producer and every transformation against its

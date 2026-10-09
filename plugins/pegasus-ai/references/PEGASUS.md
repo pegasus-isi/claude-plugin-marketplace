@@ -9,7 +9,7 @@ A Pegasus workflow consists of five components:
 | Component | Purpose |
 |-----------|---------|
 | **Properties** | Pegasus configuration (transfer threads, retry settings) |
-| **Site Catalog** | Defines execution sites (local, condorpool, a Slurm `compute`, ...). Written by `custom_sites.py`, never hard-coded in the generator — see [Portable Sites](#portable-sites-htcondor-and-slurm) |
+| **Site Catalog** | Defines execution sites (`local`, and `compute`: an HTCondor pool, a Slurm cluster, or a hosted catalog's site). Written by `custom_sites.py`, never hard-coded in the generator — see [Portable Sites](#portable-sites-htcondor-and-slurm) |
 | **Transformation Catalog** | Registers executables (wrapper scripts) and containers |
 | **Replica Catalog** | Registers input data files and their physical locations |
 | **Workflow (DAG)** | Defines jobs, their I/O files, and dependencies |
@@ -179,36 +179,41 @@ copy it next to the generator, which imports `ensure_sites_yml`). Precedence,
 most specific first:
 
 1. A `sites.yml` entry someone wrote for the site — kept as-is.
-2. A **hosted catalog** named in `~/.pegasusrc`
-   (`pegasus.catalog.site.repo.file = unity.yml`, from
-   [pegasushub/pegasus-site-catalogs](https://github.com/pegasushub/pegasus-site-catalogs/tree/main/conf)).
-   Pegasus downloads it and merges `sites.yml` over it key by key; hosted
-   catalogs name their site `compute`.
-3. Otherwise an HTCondor `condorpool` site — so a zero-argument run (Pegasus
-   Studio's Run button) plans with no setup.
+2. A **hosted catalog** from
+   [pegasushub/pegasus-site-catalogs](https://github.com/pegasushub/pegasus-site-catalogs/tree/main/conf),
+   named with the generator's `-s/--hosted-site-catalog FILE` (e.g.
+   `-s unity.yml`), which it writes into the workflow's `pegasus.properties`
+   as `pegasus.catalog.site.repo.file`. Without `-s`, one set in
+   `~/.pegasusrc` is used. Pegasus downloads it and merges `sites.yml` over
+   it key by key.
+3. Otherwise an HTCondor site — so a zero-argument run (Pegasus Studio's Run
+   button) plans with no setup.
 
-The default `-e` follows the same rule: `compute` when `~/.pegasusrc` names a
-hosted catalog, else `condorpool`. A hosted catalog defines only `compute`, so
-never leave `-e condorpool` relying on it: `pegasus-plan` fails with the site
-undefined. `custom_sites.py` writes an overlay (overrides only) solely for a
-site the hosted catalog defines — read from the planner's copy of the hosted
-file when present, else assumed to be `compute` — and a complete entry for any
-other site, and the generator warns when `-e` names a site nothing defines.
+**The execution site is always called `compute`** (the `-e` default), the
+name hosted catalogs give their one site — the convention
+[pegasus-gromacs](https://github.com/pegasus-isi/pegasus-gromacs) follows.
+`pegasus-plan -s compute` then works the same whether the site comes from a
+hosted catalog or from `sites.yml`. Never default to `condorpool`: a hosted
+catalog does not define it, so `pegasus-plan` fails with the site undefined.
+`custom_sites.py` writes an overlay (overrides only) solely for a site the
+hosted catalog defines — read from the planner's copy of the hosted file when
+present, else assumed to be `compute` — and a complete entry for any other
+site, and the generator warns when `-e` names a site nothing defines.
 
 Only the requested site's entry is written; a `local` site (scratch and
 `output/` under the workflow directory) is always ensured for `-o local`. The
 generator exposes the knobs as ordinary options (they appear in Studio's run
-form): `-e/--execution-site`, `--site-style auto|condor|slurm|none`, `--queue`,
+form): `-e/--execution-site`, `-s/--hosted-site-catalog FILE`,
+`--site-style auto|condor|slurm|none`, `--queue`,
 `--project`, `--site-scratch`, `--site-profile NS:KEY=VALUE`,
 `--tag-profile TAG:NS:KEY=VALUE`, `--shared-filesystem auto|yes|no`.
 
 ```bash
 ./workflow_generator.py                                   # HTCondor pool
-./workflow_generator.py -e compute --site-style slurm \
+./workflow_generator.py --site-style slurm \
     --queue cpu --project my_lab --tag-profile gpu:pegasus:queue=gpu
-echo "pegasus.catalog.site.repo.file = unity.yml" >> ~/.pegasusrc
-./workflow_generator.py -e compute --site-style slurm --project my_lab  # hosted
-pegasus-plan --submit -s <site> -o local workflow.yml
+./workflow_generator.py -s unity.yml --site-style slurm --project my_lab  # hosted
+pegasus-plan --submit -s compute -o local workflow.yml
 ```
 
 Slurm submission goes through HTCondor's glite/BLAHP: plan on the cluster's
@@ -459,7 +464,7 @@ After generating the workflow:
 
 ```bash
 # Pegasus can generate a DOT graph of the DAG
-pegasus-plan --submit -s condorpool -o local workflow.yml
+pegasus-plan --submit -s compute -o local workflow.yml
 pegasus-status <run-dir>
 ```
 
@@ -615,10 +620,9 @@ From: ubuntu:22.04
 # 1. Generate workflow
 ./workflow_generator.py [options] --output workflow.yml
 
-# 2. Plan and submit (-s: the site you generated for — condorpool by default,
-#    compute with a hosted catalog or on a Slurm cluster; the generator prints
-#    the exact command)
-pegasus-plan --submit -s condorpool -o local workflow.yml
+# 2. Plan and submit (-s: the execution site — compute unless -e changed it;
+#    the generator prints the exact command)
+pegasus-plan --submit -s compute -o local workflow.yml
 
 # 3. Monitor
 pegasus-status <run-directory>

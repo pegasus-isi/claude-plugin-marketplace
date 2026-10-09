@@ -14,9 +14,10 @@ Usage:
     ./workflow_generator.py [CUSTOMIZE: add usage examples]
 
 Sites: the workflow names no scheduler. Jobs state cores, memory, a wall-clock
-runtime and optional tags; custom_sites.py (copy it next to this file) writes
-sites.yml for an HTCondor pool by default, or for Slurm via --site-style slurm
---queue --project. See PEGASUS.md "Portable Sites".
+runtime and optional tags, and plan against a site named "compute". A hosted
+site catalog (-s unity.yml, ...) defines it; otherwise custom_sites.py (copy
+it next to this file) writes it to sites.yml as an HTCondor pool, or for Slurm
+via --site-style slurm --queue --project. See PEGASUS.md "Portable Sites".
 """
 
 import argparse
@@ -34,11 +35,6 @@ from custom_sites import (  # noqa: E402
     HOSTED_SITE, STYLES, ensure_sites_yml, hosted_catalog, is_batch_site, parse_profile,
     parse_tag_profile, worker_package_url,
 )
-
-# Execution site when -e is not given: an HTCondor pool, unless ~/.pegasusrc
-# names a hosted catalog (pegasushub pegasus-site-catalogs), whose one site is
-# HOSTED_SITE ("compute").
-DEFAULT_SITE = "condorpool"
 
 # [CUSTOMIZE] Add any additional imports needed for your workflow
 # Examples: json, csv, glob, datetime, requests, urllib.request
@@ -109,9 +105,15 @@ class MyWorkflow:
     # Properties — rarely needs changes
     # ------------------------------------------------------------------
     def create_pegasus_properties(self, sites_yml="sites.yml",
-                                  bypass_input_staging=False):
+                                  bypass_input_staging=False,
+                                  hosted_site_catalog=None):
         self.props = Properties()
         self.props["pegasus.transfer.threads"] = "16"
+        if hosted_site_catalog:
+            # A centrally hosted site catalog (pegasushub
+            # pegasus-site-catalogs) defines the execution site; pegasus-plan
+            # downloads and caches it, and merges sites.yml over it.
+            self.props["pegasus.catalog.site.repo.file"] = hosted_site_catalog
         # Symlink rather than copy when an input already sits on the
         # execution site. A no-op otherwise, so always on.
         self.props["pegasus.transfer.links"] = "true"
@@ -361,16 +363,17 @@ def main():
         epilog="""
 Examples:
   %(prog)s --items foo bar --output workflow.yml
-  %(prog)s --items foo -e compute --site-style slurm --queue cpu --project my_lab
+  %(prog)s --items foo -s unity.yml --project my_lab
+  %(prog)s --items foo --site-style slurm --queue cpu --project my_lab
 """,
     )
 
     # --- Standard Pegasus arguments (keep these) ---
     # Execution site. Every option has a default, so a zero-argument run (the
-    # Pegasus Studio "Run" button) plans on an HTCondor pool, or on a hosted
-    # catalog's "compute" when ~/.pegasusrc names one; the rest tailor
-    # sites.yml for a batch cluster. dest "execution_site" is what Studio
-    # matches to keep its "Where it runs" choice in sync.
+    # Pegasus Studio "Run" button) plans on "compute": the hosted catalog's
+    # site when one is named, else an HTCondor pool written to sites.yml; the
+    # rest tailor sites.yml for a batch cluster. dest "execution_site" is what
+    # Studio matches to keep its "Where it runs" choice in sync.
     parser.add_argument(
         "-e",
         "--execution-site",
@@ -378,10 +381,18 @@ Examples:
         dest="execution_site",
         metavar="STR",
         type=str,
-        default=None,
-        help=f"Site to plan against (default: {HOSTED_SITE!r} when "
-             "~/.pegasusrc names a hosted catalog, which call their site "
-             f"that; otherwise {DEFAULT_SITE!r})",
+        default=HOSTED_SITE,
+        help=f"Site to plan against (default: {HOSTED_SITE!r}, the name "
+             "hosted catalogs give their site)",
+    )
+    parser.add_argument(
+        "-s",
+        "--hosted-site-catalog",
+        metavar="FILE",
+        help="Centrally hosted site catalog to plan against, e.g. unity.yml "
+             "(github.com/pegasushub/pegasus-site-catalogs); written to "
+             "pegasus.properties. Default: the one named in ~/.pegasusrc, "
+             "if any.",
     )
     parser.add_argument(
         "--site-style",
@@ -411,7 +422,7 @@ Examples:
                              "host. auto: on for Slurm sites, off for HTCondor.")
     parser.add_argument("--sites-yml", metavar="FILE", default="sites.yml",
                         help="Local site catalog (default: sites.yml)")
-    parser.add_argument("-s", "--skip-sites-catalog", action="store_true",
+    parser.add_argument("--skip-sites-catalog", action="store_true",
                         help="Deprecated: same as --site-style none")
     parser.add_argument(
         "-o",
@@ -449,8 +460,6 @@ Examples:
     # parser.add_argument("--skip-step3", action="store_true")
 
     args = parser.parse_args()
-    if args.execution_site is None:
-        args.execution_site = HOSTED_SITE if hosted_catalog() else DEFAULT_SITE
 
     # --- [CUSTOMIZE] Input validation ---
     # if not args.test and not args.samplesheet:
@@ -473,10 +482,11 @@ Examples:
             args.site_style = "none"
         action, style = ensure_sites_yml(
             args.sites_yml, args.execution_site, workflow.wf_dir,
-            style=args.site_style, queue=args.queue, project=args.project,
+            style=args.site_style, hosted=args.hosted_site_catalog,
+            queue=args.queue, project=args.project,
             scratch=args.site_scratch, profiles=args.site_profile,
             tag_profiles=args.tag_profile)
-        hosted = hosted_catalog()
+        hosted = hosted_catalog(args.hosted_site_catalog)
         logger.info(f"Site catalog: {args.sites_yml}: {action}"
                     + (f" (merged over hosted {hosted})" if hosted else ""))
         if (style is None and hosted and args.execution_site != "local"
@@ -493,7 +503,8 @@ Examples:
             bypass = style is not None and style != "condor"
         else:
             bypass = args.shared_filesystem == "yes"
-        workflow.bind_workflow_dir = bypass or is_batch_site(style)
+        workflow.bind_workflow_dir = bypass or is_batch_site(
+            style, args.hosted_site_catalog)
         workflow.worker_package_url = worker_package_url(CONTAINER_PLATFORM)
         if not workflow.worker_package_url:
             logger.warning("pegasus-version not found: Pegasus will choose the "
@@ -501,7 +512,8 @@ Examples:
                            "in the image and internet on the workers)")
 
         workflow.create_pegasus_properties(
-            sites_yml=args.sites_yml, bypass_input_staging=bypass)
+            sites_yml=args.sites_yml, bypass_input_staging=bypass,
+            hosted_site_catalog=args.hosted_site_catalog)
         workflow.create_transformation_catalog()
         workflow.create_replica_catalog()
         workflow.create_workflow(args)

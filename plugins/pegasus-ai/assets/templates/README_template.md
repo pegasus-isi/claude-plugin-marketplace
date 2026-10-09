@@ -70,14 +70,16 @@ Update the `image=` path in `workflow_generator.py`'s `Container()` definition t
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--items` | (required) | Items to process in parallel |
-| `-e`, `--execution-site-name` | `condorpool` | HTCondor execution site name |
-| `-s`, `--skip-sites-catalog` | false | Skip site catalog creation |
+| `-e`, `--execution-site` | `compute` | Site to plan against (the name hosted catalogs give their site) |
+| `-s`, `--hosted-site-catalog` | (none; `~/.pegasusrc` if set) | Hosted site catalog to plan against, e.g. `unity.yml` |
+| `--site-style` | `auto` | `auto`: keep an existing `sites.yml` entry or hosted catalog, else write `compute` as an HTCondor pool; `condor`/`slurm`: (re)write it; `none`: leave `sites.yml` alone |
+| `--queue`, `--project` | — | Batch partition and allocation account |
 | `-o`, `--output` | `workflow.yml` | Output workflow file |
 
 ### Submit Workflow
 
 ```bash
-pegasus-plan --submit -s condorpool -o local workflow.yml
+pegasus-plan --submit -s compute -o local workflow.yml
 ```
 
 ### Monitor Workflow

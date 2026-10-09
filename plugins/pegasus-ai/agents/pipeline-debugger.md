@@ -128,7 +128,7 @@ python3 workflow_generator.py --help
 
 # Re-run workflow
 python3 workflow_generator.py --items test_item --output workflow.yml
-pegasus-plan --submit -s condorpool -o local workflow.yml
+pegasus-plan --submit -s compute -o local workflow.yml
 ```
 
 ## Case Study: Medical Imaging Federated Learning Workflow (IEEE eScience 2026)
