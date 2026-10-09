@@ -231,6 +231,20 @@ The default `-e compute` fails there with *"Execution site compute not loaded
 into site store. Loaded sites are [condorpool, local]"* — Pegasus has no
 built-in `compute`.
 
+**Pool-specific job requirements** (e.g. pinning jobs to IPv4 workers on a
+FABRIC slice) go in a **site-scoped** property, never a global
+`condor.requirements`: the global one also lands on local-universe jobs such as
+`create_dir`, which then stay idle forever.
+
+```properties
+pegasus.catalog.site.sites.condorpool.profiles.condor.requirements = (<expr>)
+```
+
+**Where outputs land.** The CLI writes no `local` site either, so Pegasus uses
+its built-in one, whose storage is `./wf-output/`. The printed plan command
+therefore passes `--output-dir <workflow dir>/output`, keeping outputs in
+`output/` as with the notebook's `create_sites_catalog()`.
+
 **`create_sites_catalog()`** stays in the generator as a placeholder, **not
 called by the CLI**: a self-contained `local` + HTCondor `compute` catalog for
 notebooks or a quick local run (`workflow.create_sites_catalog()` before
@@ -476,7 +490,7 @@ After generating the workflow:
 
 ```bash
 # Pegasus can generate a DOT graph of the DAG
-pegasus-plan --submit -s compute -o local workflow.yml
+pegasus-plan --dir submit -s compute -o local --output-dir "$PWD/output" --submit workflow.yml
 pegasus-status <run-dir>
 ```
 
@@ -634,7 +648,7 @@ From: ubuntu:22.04
 ./workflow_generator.py [options] --output workflow.yml
 
 # 2. Plan and submit (the generator prints this; -s = its -e value)
-pegasus-plan --dir submit -s compute -o local --submit workflow.yml
+pegasus-plan --dir submit -s compute -o local --output-dir "$PWD/output" --submit workflow.yml
 
 # 3. Monitor
 pegasus-status <run-directory>
