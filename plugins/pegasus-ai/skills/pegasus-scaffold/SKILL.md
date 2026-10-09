@@ -13,6 +13,7 @@ allowed-tools:
 # one place, and a model that never loads this skill still learns of it.
 deliverables:
   - workflow_generator.py
+  - <Name>-Workflow.ipynb
   - bin/<one wrapper per step>
   - Apptainer/<Name>_Container.def
   - run_manual.sh
@@ -27,8 +28,8 @@ You are a Pegasus workflow generator. The user has invoked `/pegasus-scaffold` t
 
 Everything for one workflow goes in **one directory**, named `<name>`:
 `{pipeline-name}-workflow`, the kebab-case name the user gave the analysis plus a
-`-workflow` suffix (Step 4). The generator, `bin/`, `Apptainer/`, `run_manual.sh`
-and the README all live inside it. A project split across `sensor-summary/` and
+`-workflow` suffix (Step 4). The generator, the notebook, `bin/`, `Apptainer/`,
+`run_manual.sh` and the README all live inside it. A project split across `sensor-summary/` and
 `sensor-summary-workflow/` is one the user cannot run.
 
 Create it where the user is working, unless they say otherwise. Some hosts run
@@ -53,7 +54,7 @@ without the guide you will re-derive patterns this project has already settled,
 and the container, staging and fan-out conventions below assume you have read it.
 
 1. Read `references/PEGASUS.md` — this is the comprehensive guide for all Pegasus patterns.
-2. Read `assets/templates/workflow_generator_template.py` — your starting point for the workflow generator — and `assets/templates/custom_sites.py`, which it imports to write the site catalog.
+2. Read `assets/templates/workflow_generator_template.py` — your starting point for the workflow generator (the [pegasus-gromacs](https://github.com/pegasus-isi/pegasus-gromacs) pattern) — and `assets/templates/Workflow_Notebook_template.ipynb`, the notebook that drives it.
 3. Read `assets/templates/wrapper_template.py` and `assets/templates/wrapper_template.sh` — starting points for wrappers.
 4. Read `assets/templates/Apptainer_template.def` — starting point for the container.
 
@@ -118,14 +119,13 @@ Start from `assets/templates/workflow_generator_template.py` and customize:
 1. **Class name**: `{PipelineName}Workflow`
 2. **`wf_name`**: `"{pipeline_name}"`
 3. **`__init__`**: Add pipeline-specific parameters
-4. **`create_transformation_catalog`**: Register one `Transformation` per wrapper script, on `site="local"`, with memory, cores and a generous `runtime` (seconds) in `TOOL_CONFIGS`; give tools with unusual needs (GPU, long training) a `tag`
-4a. **`CONTAINER_PLATFORM`**: set it to the container image's base OS (e.g. `x86_64_ubuntu_24` for `ubuntu:24.04`, `x86_64_deb_13` for `python:3.11-slim-trixie`; `x86_64_rhel_8` for a base older than any published package, such as `python:3.8-slim`) — it selects the worker package staged into the container
-4b. **Copy `assets/templates/custom_sites.py`** unchanged next to `workflow_generator.py`. Do not write a `create_sites_catalog()`: sites come from `custom_sites.ensure_sites_yml()`, which plans on HTCondor by default and on Slurm with `--site-style slurm` (PEGASUS.md "Portable Sites")
+4. **`create_transformation_catalog(exec_site_name)`**: Register one `Transformation` per wrapper script on `site=exec_site_name`, with memory and cores from `TOOL_CONFIGS`. Add a `runtime` (seconds) only for a tool that needs longer than a batch catalog's default (Unity: 2 h); tag GPU jobs with the catalogs' `gpu` tag
+4a. **Sites — keep the template's as is** (PEGASUS.md "Site Catalogs"): `-e/--execution-site-name` (default `compute`), `-s/--hosted-site-catalog FILE` (written to `pegasus.properties`), and `create_sites_catalog()` as a placeholder the CLI **never calls** (the notebook does). No `--queue`/`--project`/scheduler options
 5. **`create_replica_catalog`**: Register input files — local paths or direct
    URLs as PFNs (a URL PFN is staged by Pegasus itself; no fetch job needed) —
    or leave empty for runtime API-fetch patterns
 6. **`create_workflow`**: Build the DAG with jobs, file objects, and dependencies
-7. **`main()`**: Add pipeline-specific argparse arguments
+7. **`main()`**: Add pipeline-specific argparse arguments. Keep the template's ending: write the catalogs and print the `pegasus-plan` command — the CLI never plans or submits by itself
 8. **Input validation**: Validate required arguments before any Pegasus API calls
 
 Key rules:
@@ -147,14 +147,32 @@ avoids all four — that is the strongest reason to start from it:
   builders: `ReplicaCatalog` has `add_replica()` but no `get_replica()`, and
   `Directory` has no `add_directory()`. When a later job needs a file, keep a
   reference to your own `File` object — never ask a catalog to hand one back.
-- Do not build a SiteCatalog in the generator. Hand-written site catalogs
-  were where `condorpool` got hard-coded (the workflow then cannot run on
-  Slurm) and where `local` got registered twice (`DuplicateError` when the
-  generator runs). `custom_sites.ensure_sites_yml()` writes `sites.yml`,
-  adding only the requested site and `local`.
+- The CLI never writes the execution site. Hand-written site catalogs were
+  where `condorpool` got hard-coded (the workflow then cannot use a hosted
+  catalog) and where `local` got registered twice (`DuplicateError` when the
+  generator runs). Keep the template's `create_sites_catalog()` placeholder —
+  `local` and `compute`, added once each — and call it only from the notebook.
 - Nothing executes above its definition. The only top-level call is the
   `if __name__ == "__main__": main()` guard on the last line of the file; a
   bare `main()` placed above `def main()` dies with `NameError`.
+
+### 4a′. `{Name}-Workflow.ipynb`
+
+Start from `assets/templates/Workflow_Notebook_template.ipynb` (modelled on
+pegasus-gromacs's `GROMACS-MD-Workflow.ipynb`). The notebook is a **driver, not
+a copy**: it imports the generator's class (and any input parser) from
+`workflow_generator.py` and calls the same methods the CLI does —
+`create_pegasus_properties`, `create_sites_catalog` (or a hosted catalog),
+`create_transformation_catalog`, `create_replica_catalog`, `create_workflow`,
+`write`, then `plan_submit`, `status`, `wait`, `statistics` (submitting is an
+explicit notebook step, never automatic). Never paste
+job-building code, tool configs or file lists into it: a change to the
+pipeline goes in `workflow_generator.py` only, and both entry points pick it up.
+
+Fill in the `[CUSTOMIZE]` cells: the learning objectives and job list, the
+test-data step (or remove it), the container name, the constructor and
+`create_workflow` arguments (the values the CLI would parse), and the outputs
+table plus one inline result.
 
 ### 4b. `bin/{step}.py` (one per pipeline step)
 
@@ -216,6 +234,7 @@ directory and read the listing against this list — do not rely on remembering
 what you wrote:
 
 - [ ] `workflow_generator.py`
+- [ ] `{Name}-Workflow.ipynb`, importing the generator's class — no copied workflow code
 - [ ] `bin/` — one wrapper per pipeline step
 - [ ] `Apptainer/{Name}_Container.def`
 - [ ] `run_manual.sh`, executable
@@ -268,17 +287,17 @@ environment is unavoidable, a venv inside the project (`.venv/`, in
 The checklist above is you reading your own code, which is exactly the state of
 mind that wrote the bug. Finish by having the planner read it instead:
 
+The CLI writes the workflow and catalogs but never submits, so plan it
+without `--submit`. With no site catalog configured, generate for Pegasus's
+built-in `condorpool` site (it needs no catalog at all):
+
 ```bash
-python3 workflow_generator.py <args>          # writes workflow.yml + the catalogs
+python3 workflow_generator.py <args> -e condorpool     # writes workflow.yml + the catalogs
 pegasus-plan --dir submit --sites condorpool --output-sites local workflow.yml
 ```
 
-`--sites condorpool` matches the generator's default site; the generator
-writes `sites.yml` with it, so planning needs no other setup. (With a hosted
-catalog in `~/.pegasusrc` the default site is `compute` — plan with
-`--sites compute`.) To check the
-Slurm variant too, generate with `-e compute --site-style slurm --queue cpu`
-and plan with `--sites compute`.
+To check the default `compute` against a hosted catalog too, generate with
+`-s access-pegasus.yml` (or `unity.yml`, ...) and plan with `--sites compute`.
 
 Planning is local, takes seconds, needs no container built and no pool running.
 It resolves every file against its producer and every transformation against its

@@ -97,24 +97,24 @@ For each wrapper script, verify:
 ### Category 8: CLI and Usability
 
 - [ ] `workflow_generator.py --help` would produce useful output (argparse with descriptions)
-- [ ] Standard flags are present: `-e/--execution-site` (dest `execution_site`), `-o` (output), and the site options from the template (`--site-style`, `--queue`, `--project`, `--tag-profile`, `--shared-filesystem`)
-- [ ] Every argument has a default, so a zero-argument run plans (Pegasus Studio's Run button)
+- [ ] Standard flags are present, as in the template: `-s/--hosted-site-catalog FILE`, `-e/--execution-site-name` (default `compute`), `-o/--output`
+- [ ] **ERROR** `main()` writes the workflow and catalogs and prints the `pegasus-plan` command — it never plans or submits by itself (no `plan_submit()`/`wf.plan(submit=True)` on the CLI path). Submitting is an explicit step: the printed command, or `plan_submit()` in the notebook
+- [ ] A `{Name}-Workflow.ipynb` exists and **imports** the generator's class and calls its methods (`create_*`, `write`, `plan_submit`, `status`, `wait`, `statistics`) — no job-building code, tool configs or file lists copied into the notebook
 - [ ] Input validation catches missing required arguments before Pegasus API calls
 - [ ] Error messages are descriptive (not just stack traces)
 
-### Category 9: Site Portability (HTCondor and Slurm)
+### Category 9: Site Catalogs (pegasus-gromacs pattern)
 
-See PEGASUS.md "Portable Sites". A workflow that only runs on `condorpool` is an
-ERROR if it is meant for clusters; flag each item:
+See PEGASUS.md "Site Catalogs". Where jobs run depends on the user's resource
+provider and allocation, so it belongs to a site catalog the user chooses — a
+hosted one (`-s FILE` or `~/.pegasusrc`) — never to the generator:
 
-- [ ] **ERROR** The generator does not build a site catalog itself (no `SiteCatalog`/`Site(...)` with `style=condor`/`universe=vanilla`); `custom_sites.ensure_sites_yml()` writes `sites.yml`
-- [ ] **ERROR** Every transformation has a `runtime` (seconds) — batch sites refuse or kill jobs without one
-- [ ] **ERROR** No scheduler details in the workflow: no ClassAd `requirements`, `+Attribute`s, partitions, accounts or GPU model/VRAM constraints on transformations or jobs. Unusual needs are expressed as a Pegasus tag (`add_profiles(Namespace.PEGASUS, key="tag", value=...)`) that the site catalog maps
-- [ ] **ERROR** `pegasus.transfer.bypass.input.staging` is not set unconditionally — only for batch/Slurm sites (it breaks condor pools that stage over HTCondor file transfer)
-- [ ] **ERROR** Containers bind the workflow directory (`container_arguments="--bind <wf_dir>"`) on batch sites only — never on a condor pool. Without it Slurm jobs die with exit 127 "Unable to execute the specified binary"
-- [ ] **ERROR** The `-e` default is not a fixed `condorpool`: it is `HOSTED_SITE` ("compute") when `hosted_catalog()` is set, else the workflow's default site. Hosted catalogs define only `compute`, so a fixed `condorpool` fails `pegasus-plan` for anyone with a hosted catalog in `~/.pegasusrc`
-- [ ] **WARNING** Containerized workflows name the container's worker package (`pegasus::worker`, platform matching the image base, version from `pegasus-version`) with `worker.package=true`, `strict=false`, `autodownload=false`
-- [ ] **SUGGESTION** `pegasus.transfer.links=true` is set
+- [ ] **ERROR** The CLI does not write the execution site: no `SiteCatalog` built or written on the CLI path. `create_sites_catalog()` may exist as a placeholder (`local` + HTCondor `compute`) but only the notebook calls it
+- [ ] **ERROR** The `-e` default is `compute`, never `condorpool`. Hosted catalogs define only `compute`; `-e condorpool` stays available for a plain HTCondor pool with no catalog (Pegasus builds a default `condorpool`)
+- [ ] **ERROR** `-s/--hosted-site-catalog FILE` sets `pegasus.catalog.site.repo.file` in the workflow's `pegasus.properties`
+- [ ] **ERROR** No scheduler details in the workflow: no `--queue`/`--project`/`--site-style` options, no ClassAd `requirements`, `+Attribute`s, partitions, accounts or GPU model/VRAM constraints. GPU jobs carry the catalogs' `gpu` tag (`add_profiles(Namespace.PEGASUS, key="tag", value="gpu")`)
+- [ ] **ERROR** Transformations are registered on `exec_site_name` (the `-e` value), so they resolve on whatever site the plan uses
+- [ ] **SUGGESTION** A tool that runs longer than a batch catalog's default wall-clock (Unity: 2 h) states its own `runtime`
 
 ## Step 3: Generate Report
 

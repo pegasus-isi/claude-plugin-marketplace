@@ -89,9 +89,9 @@ Ask the user (skip questions they've already answered):
    **A workflow meant for more than one site has no single host to match** —
    an HTCondor pool's submit host and a Slurm cluster's login node run
    different releases. There, the generator names the *container's* worker
-   package (`pegasus::worker` in the Transformation Catalog,
-   `CONTAINER_PLATFORM` in the template; PEGASUS.md "Worker package in
-   containers"), so pegasus-lite never downloads and the run-time rule above no
+   package (`pegasus::worker` in the Transformation Catalog, a
+   `CONTAINER_PLATFORM` constant added to the generator; PEGASUS.md "Worker
+   package in containers"), so pegasus-lite never downloads and the run-time rule above no
    longer applies. Set `CONTAINER_PLATFORM` to this definition's base
    (`x86_64_deb_13` for `python:3.13-slim-trixie`) and keep the two in step.
 

@@ -70,14 +70,19 @@ Update the `image=` path in `workflow_generator.py`'s `Container()` definition t
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--items` | (required) | Items to process in parallel |
-| `-e`, `--execution-site-name` | `condorpool` | HTCondor execution site name |
-| `-s`, `--skip-sites-catalog` | false | Skip site catalog creation |
+| `-s`, `--hosted-site-catalog` | (none; `~/.pegasusrc` if set) | [Hosted site catalog](https://github.com/pegasushub/pegasus-site-catalogs/tree/main/conf) to plan against, e.g. `access-pegasus.yml`, `unity.yml` |
+| `-e`, `--execution-site-name` | `compute` | Execution site name; `condorpool` on a plain HTCondor pool with no site catalog |
 | `-o`, `--output` | `workflow.yml` | Output workflow file |
 
-### Submit Workflow
+The generator writes the workflow and catalogs and prints the plan command; it
+does not submit. On a plain HTCondor pool with no site catalog, add
+`-e condorpool`. The notebook `{Name}-Workflow.ipynb` runs the same generator
+class interactively and submits from an explicit cell.
+
+### Plan and Submit
 
 ```bash
-pegasus-plan --submit -s condorpool -o local workflow.yml
+pegasus-plan --dir submit -s compute -o local --submit workflow.yml
 ```
 
 ### Monitor Workflow

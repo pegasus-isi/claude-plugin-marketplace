@@ -30,7 +30,9 @@ class MyWorkflow:
         self.props = Properties()
         self.props["pegasus.transfer.threads"] = "16"
 
-    def create_sites_catalog(self, exec_site_name="condorpool"):
+    # Placeholder, not called by the CLI (the notebook calls it): jobs run
+    # on "compute" from a hosted site catalog (-s FILE / ~/.pegasusrc).
+    def create_sites_catalog(self, exec_site_name="compute"):
         self.sc = SiteCatalog()
         local = Site("local").add_directories(
             Directory(Directory.SHARED_SCRATCH, self.shared_scratch_dir)
@@ -45,7 +47,7 @@ class MyWorkflow:
         )
         self.sc.add_sites(local, exec_site)
 
-    def create_transformation_catalog(self, exec_site_name="condorpool"):
+    def create_transformation_catalog(self, exec_site_name="compute"):
         self.tc = TransformationCatalog()
         container = Container("my_container",
             container_type=Container.SINGULARITY,
