@@ -98,6 +98,7 @@ For each wrapper script, verify:
 
 - [ ] `workflow_generator.py --help` would produce useful output (argparse with descriptions)
 - [ ] Standard flags are present, as in the template: `-s/--hosted-site-catalog FILE`, `-e/--execution-site-name` (default `compute`), `-o/--output`
+- [ ] **WARNING** The printed plan command passes `--output-dir <workflow dir>/output`; without it outputs land in Pegasus's default `./wf-output/`
 - [ ] **ERROR** `main()` writes the workflow and catalogs and prints the `pegasus-plan` command — it never plans or submits by itself (no `plan_submit()`/`wf.plan(submit=True)` on the CLI path). Submitting is an explicit step: the printed command, or `plan_submit()` in the notebook
 - [ ] A `{Name}-Workflow.ipynb` exists and **imports** the generator's class and calls its methods (`create_*`, `write`, `plan_submit`, `status`, `wait`, `statistics`) — no job-building code, tool configs or file lists copied into the notebook
 - [ ] Input validation catches missing required arguments before Pegasus API calls
