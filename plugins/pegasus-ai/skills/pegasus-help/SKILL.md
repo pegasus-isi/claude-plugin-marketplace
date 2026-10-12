@@ -50,7 +50,7 @@ These production workflows are included in `assets/examples/` and available as f
 | `workflow_generator_s2_segmentation.py` | Image tiling, split→parallel→merge, GPU U-Net training | [pegasus-isi/s2-segmentation-workflow](https://github.com/pegasus-isi/s2-segmentation-workflow) |
 | `workflow_generator_medical_imaging_fl.py` | Federated learning with SubWorkflows, FL rounds as sub-DAGs | [pegasus-isi/medical-imaging-fl-workflow](https://github.com/pegasus-isi/medical-imaging-fl-workflow) |
 | `workflow_generator_obs_harvest.py` | Time-window splitting, parallel observation data harvesting | [swarm-workflows/obs-harvest-workflow](https://github.com/swarm-workflows/obs-harvest-workflow) |
-| `workflow_generator_sra_search.py` | Hierarchical merge tree, DAGMan rate limiting, inline submit | [pegasus-isi/sra-search-pegasus-workflow](https://github.com/pegasus-isi/sra-search-pegasus-workflow) |
+| `workflow_generator_sra_search.py` | Hierarchical merge tree, DAGMan rate limiting, container-resident tools (`incontainer`) | [pegasus-isi/sra-search-pegasus-workflow](https://github.com/pegasus-isi/sra-search-pegasus-workflow) |
 
 ### Additional Workflow Repositories
 

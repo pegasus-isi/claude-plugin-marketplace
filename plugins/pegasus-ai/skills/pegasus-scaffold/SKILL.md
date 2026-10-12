@@ -104,7 +104,7 @@ Based on the user's answers, select the closest existing workflow as a reference
 | Image tiling, split→parallel→merge, GPU U-Net training | `examples/workflow_generator_s2_segmentation.py` |
 | Federated learning with SubWorkflows, FL rounds as sub-DAGs | `examples/workflow_generator_medical_imaging_fl.py` + `examples/fl_round.py` |
 | Time-window splitting, parallel observation data harvesting | `examples/workflow_generator_obs_harvest.py` |
-| Hierarchical merge tree, DAGMan rate limiting, inline submit | `examples/workflow_generator_sra_search.py` |
+| Hierarchical merge tree, DAGMan rate limiting, container-resident tools (`incontainer`) | `examples/workflow_generator_sra_search.py` |
 
 Read the selected reference workflow before generating code.
 

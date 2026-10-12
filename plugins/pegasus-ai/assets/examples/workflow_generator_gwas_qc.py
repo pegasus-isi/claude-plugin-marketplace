@@ -24,7 +24,14 @@ Usage:
     ./workflow_generator.py --bed input.bed --bim input.bim --fam input.fam \\
         --map input.map --ref-panel ref_panel.bed \\
         --call-rate-threshold 0.98 --het-sd-threshold 3.0 \\
-        -e condorpool --output workflow.yml
+        --output workflow.yml
+
+Sites follow pegasus-isi/pegasus-gromacs: jobs run on a site named "compute",
+defined by a centrally hosted site catalog (-s access-pegasus.yml, ...;
+https://github.com/pegasushub/pegasus-site-catalogs) or by one in
+~/.pegasusrc. The generator writes no site catalog and does not submit: it
+prints the pegasus-plan command. On a plain HTCondor pool with no site
+catalog, generate with -e condorpool (Pegasus defines that site itself).
 """
 
 import argparse
@@ -51,7 +58,7 @@ TOOL_CONFIGS = {
     "aggregate_het_outliers":  {"memory": "8 GB",  "cores": 2},
     "auto_preprocess":         {"memory": "4 GB",  "cores": 2},
     "downstream_investigation":{"memory": "4 GB",  "cores": 1},
-    "ancestry_estimation":     {"memory": "16 GB", "cores": 4},
+    "ancestry_estimation":     {"memory": "12 GB", "cores": 4},  # fits a 16 GB node
     "evaluate_self_identify":  {"memory": "4 GB",  "cores": 1},
     "results_evaluation":      {"memory": "2 GB",  "cores": 1},
     "multiethnic_intersect":   {"memory": "4 GB",  "cores": 1},
@@ -108,16 +115,64 @@ class GwasQcWorkflow:
         self.wf.write(file=self.dagfile)
 
     # ------------------------------------------------------------------
+    # Plan / run / monitor (thin wrappers over the Pegasus API Workflow
+    # object, for interactive use e.g. from a Jupyter notebook)
+    # ------------------------------------------------------------------
+    def plan_submit(self, exec_site_name="compute", raise_errors=False):
+        try:
+            self.wf.plan(
+                dir="submit",
+                sites=[exec_site_name],
+                output_sites=["local"],
+                cleanup="none",
+                verbose=1,
+                submit=True,
+            )
+        except PegasusClientError as e:
+            print(e)
+            if raise_errors:
+                raise
+
+    def status(self):
+        try:
+            self.wf.status(long=True)
+        except PegasusClientError as e:
+            print(e)
+
+    def wait(self):
+        try:
+            self.wf.wait()
+        except PegasusClientError as e:
+            print(e)
+
+    def statistics(self):
+        try:
+            self.wf.statistics()
+        except PegasusClientError as e:
+            print(e)
+
+    # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
-    def create_pegasus_properties(self):
+    def create_pegasus_properties(self, hosted_site_catalog=None):
         self.props = Properties()
         self.props["pegasus.transfer.threads"] = "16"
+        if hosted_site_catalog:
+            # Use one of Pegasus' centrally hosted site catalogs instead of
+            # a locally generated one. pegasus-plan downloads and caches the
+            # named file from the catalog repository at plan time.
+            # https://pegasus.isi.edu/documentation/reference-guide/catalogs.html#centrally-hosted-site-catalogs
+            self.props["pegasus.catalog.site.repo.file"] = hosted_site_catalog
 
     # ------------------------------------------------------------------
     # Site Catalog
+    #
+    # Not used by the CLI below by default — pegasus-plan resolves the site
+    # catalog from a centrally hosted one instead (see -s/--hosted-site-catalog
+    # and create_pegasus_properties above). Kept for programmatic/notebook use
+    # when a self-contained, locally generated HTCondor site catalog is wanted.
     # ------------------------------------------------------------------
-    def create_sites_catalog(self, exec_site_name="condorpool"):
+    def create_sites_catalog(self, exec_site_name="compute"):
         self.sc = SiteCatalog()
 
         local = Site("local").add_directories(
@@ -144,14 +199,31 @@ class GwasQcWorkflow:
     # ------------------------------------------------------------------
     # Transformation Catalog
     # ------------------------------------------------------------------
-    def create_transformation_catalog(self, exec_site_name="condorpool"):
+    def create_transformation_catalog(
+        self,
+        exec_site_name="compute",
+        container_sif="Apptainer/GWAS_QC_Container.sif",
+    ):
         self.tc = TransformationCatalog()
 
+        # A local Apptainer .sif built with `apptainer build`. Pegasus stages
+        # the file like any other input, so image_site is the site where the
+        # .sif physically lives (the submit host = "local").
+        sif_path = (
+            container_sif
+            if os.path.isabs(container_sif)
+            else os.path.join(self.wf_dir, container_sif)
+        )
+        if not os.path.exists(sif_path):
+            logger.warning(
+                "Apptainer image not found at %s — build it first with: "
+                "apptainer build %s Apptainer/GWAS_QC_Container.def",
+                sif_path, sif_path)
         container = Container(
             "gwas_qc_container",
             container_type=Container.SINGULARITY,
-            image="docker://kthare10/gwas-qc:latest",
-            image_site="docker_hub",
+            image="file://" + sif_path,
+            image_site="local",
         )
 
         transformations = []
@@ -785,7 +857,8 @@ class GwasQcWorkflow:
 # ======================================================================
 # main() — CLI argument parsing
 # ======================================================================
-def main():
+def build_parser():
+    """The CLI's argument parser (also used by the notebook)."""
     parser = argparse.ArgumentParser(
         description="GWAS Quality Control Pegasus Workflow Generator",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -797,18 +870,36 @@ Examples:
   %(prog)s --bed data/input.bed --bim data/input.bim --fam data/input.fam \\
            --map data/input.map --ref-panel references/ref_panel.bed \\
            --call-rate-threshold 0.98 --het-sd-threshold 3.0
+
+  %(prog)s ... -s access-pegasus.yml     # a hosted site catalog
+  %(prog)s ... -e condorpool             # plain HTCondor pool, no site catalog
+
+Writes the workflow and its catalogs; it does not plan or submit. Plan with
+the command it prints, or from GWAS-QC-Workflow.ipynb (plan_submit()).
 """,
     )
 
     # Standard Pegasus arguments
     parser.add_argument(
-        "-s", "--skip-sites-catalog", action="store_true",
-        help="Skip site catalog creation",
+        "-s",
+        "--hosted-site-catalog",
+        metavar="FILE",
+        type=str,
+        default=None,
+        help="Name of a Pegasus centrally hosted site catalog to plan against "
+        "(e.g. access-pegasus.yml), instead of a locally generated one. Sets "
+        "pegasus.catalog.site.repo.file; see "
+        "https://pegasus.isi.edu/documentation/reference-guide/catalogs.html"
+        "#centrally-hosted-site-catalogs",
     )
     parser.add_argument(
-        "-e", "--execution-site-name", metavar="STR", type=str,
-        default="condorpool",
-        help="Execution site name (default: condorpool)",
+        "-e",
+        "--execution-site-name",
+        metavar="STR",
+        type=str,
+        default="compute",
+        help="Execution site name (default: compute; use condorpool on a "
+        "plain HTCondor pool with no site catalog)",
     )
     parser.add_argument(
         "-o", "--output", metavar="STR", type=str, default="workflow.yml",
@@ -840,8 +931,30 @@ Examples:
         "--het-sd-threshold", type=float, default=3.0,
         help="Heterozygosity SD threshold for outliers (default: 3.0)",
     )
+    parser.add_argument(
+        "--container-sif", default="Apptainer/GWAS_QC_Container.sif",
+        help="Path to the Apptainer .sif image, absolute or relative to the "
+             "workflow directory (default: Apptainer/GWAS_QC_Container.sif)",
+    )
 
-    args = parser.parse_args()
+    return parser
+
+
+def workflow_from_args(args):
+    """A GwasQcWorkflow configured from parsed CLI arguments."""
+    workflow = GwasQcWorkflow(dagfile=args.output)
+    workflow.bed_file = args.bed
+    workflow.bim_file = args.bim
+    workflow.fam_file = args.fam
+    workflow.map_file = args.map
+    workflow.ref_panel_file = args.ref_panel
+    workflow.call_rate_threshold = args.call_rate_threshold
+    workflow.het_sd_threshold = args.het_sd_threshold
+    return workflow
+
+
+def main():
+    args = build_parser().parse_args()
 
     # Input validation
     for path_arg, label in [
@@ -863,37 +976,33 @@ Examples:
     logger.info(f"Call rate threshold: {args.call_rate_threshold}")
     logger.info(f"Het SD threshold:   {args.het_sd_threshold}")
     logger.info(f"Execution site:     {args.execution_site_name}")
+    logger.info(
+        f"Hosted site catalog: {args.hosted_site_catalog or '(none — supply your own site catalog)'}"
+    )
     logger.info(f"Output file:        {args.output}")
     logger.info("=" * 70)
 
     try:
-        workflow = GwasQcWorkflow(dagfile=args.output)
-        workflow.bed_file = args.bed
-        workflow.bim_file = args.bim
-        workflow.fam_file = args.fam
-        workflow.map_file = args.map
-        workflow.ref_panel_file = args.ref_panel
-        workflow.call_rate_threshold = args.call_rate_threshold
-        workflow.het_sd_threshold = args.het_sd_threshold
+        workflow = workflow_from_args(args)
 
-        workflow.create_pegasus_properties()
-
-        if not args.skip_sites_catalog:
-            workflow.create_sites_catalog(
-                exec_site_name=args.execution_site_name
-            )
-
+        workflow.create_pegasus_properties(
+            hosted_site_catalog=args.hosted_site_catalog
+        )
         workflow.create_transformation_catalog(
-            exec_site_name=args.execution_site_name
+            exec_site_name=args.execution_site_name,
+            container_sif=args.container_sif,
         )
         workflow.create_replica_catalog()
         workflow.create_workflow(args)
         workflow.write()
 
         logger.info(f"\nWorkflow written to {args.output}")
+        # --output-dir: no site catalog defines "local", so Pegasus's built-in local
+        # site would otherwise stage outputs to ./wf-output.
         logger.info(
-            f"Submit: pegasus-plan --submit "
-            f"-s {args.execution_site_name} -o local {args.output}"
+            f"Plan and submit: pegasus-plan --dir submit "
+            f"-s {args.execution_site_name} -o local "
+            f"--output-dir {workflow.local_storage_dir} --submit {args.output}"
         )
 
     except Exception as e:

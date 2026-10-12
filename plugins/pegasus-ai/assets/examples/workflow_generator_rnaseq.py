@@ -23,6 +23,13 @@ Usage:
     ./workflow_generator.py --sample-file samples.tsv --ref-genome ref.fasta \\
                             --ref-ann ref.gff --contrast-table contrasts.tsv \\
                             --output workflow.yml
+
+Sites follow pegasus-isi/pegasus-gromacs: jobs run on a site named "compute",
+defined by a centrally hosted site catalog (-s access-pegasus.yml, ...;
+https://github.com/pegasushub/pegasus-site-catalogs) or by one in
+~/.pegasusrc. The generator writes no site catalog and does not submit: it
+prints the pegasus-plan command. On a plain HTCondor pool with no site
+catalog, generate with -e condorpool (Pegasus defines that site itself).
 """
 
 import argparse
@@ -40,16 +47,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Per-tool resource configuration (from Nextflow conf/base.config)
+# Per-tool resource configuration. Cores follow the Nextflow conf/base.config
+# labels; memory is scaled down from its 24 GB (process_medium) and 46 GB
+# (process_high) so every job fits a 16 GB node, which is ample for bacterial
+# genomes.
 TOOL_CONFIGS = {
-    "fastp":          {"memory": "24 GB", "cores": 4},     # process_medium
-    "bwa_index":      {"memory": "24 GB", "cores": 4},     # process_medium
-    "bwa_align":      {"memory": "46 GB", "cores": 8},     # process_high
-    "bam2bigwig":     {"memory": "24 GB", "cores": 4},     # process_medium
-    "count_reads":    {"memory": "24 GB", "cores": 4},     # process_medium
-    "tmm_normalise":  {"memory": "24 GB", "cores": 4},     # process_medium
-    "pca":            {"memory": "24 GB", "cores": 4},     # process_medium
-    "diffexpr":       {"memory": "46 GB", "cores": 8},     # process_high
+    "fastp":          {"memory": "8 GB",  "cores": 4},     # process_medium
+    "bwa_index":      {"memory": "8 GB",  "cores": 4},     # process_medium
+    "bwa_align":      {"memory": "14 GB", "cores": 8},     # process_high
+    "bam2bigwig":     {"memory": "8 GB",  "cores": 4},     # process_medium
+    "count_reads":    {"memory": "8 GB",  "cores": 4},     # process_medium
+    "tmm_normalise":  {"memory": "8 GB",  "cores": 4},     # process_medium
+    "pca":            {"memory": "8 GB",  "cores": 4},     # process_medium
+    "diffexpr":       {"memory": "14 GB", "cores": 8},     # process_high
 }
 
 
@@ -153,16 +163,64 @@ class RnaseqWorkflow:
         self.wf.write(file=self.dagfile)
 
     # ------------------------------------------------------------------
+    # Plan / run / monitor (thin wrappers over the Pegasus API Workflow
+    # object, for interactive use e.g. from a Jupyter notebook)
+    # ------------------------------------------------------------------
+    def plan_submit(self, exec_site_name="compute", raise_errors=False):
+        try:
+            self.wf.plan(
+                dir="submit",
+                sites=[exec_site_name],
+                output_sites=["local"],
+                cleanup="none",
+                verbose=1,
+                submit=True,
+            )
+        except PegasusClientError as e:
+            print(e)
+            if raise_errors:
+                raise
+
+    def status(self):
+        try:
+            self.wf.status(long=True)
+        except PegasusClientError as e:
+            print(e)
+
+    def wait(self):
+        try:
+            self.wf.wait()
+        except PegasusClientError as e:
+            print(e)
+
+    def statistics(self):
+        try:
+            self.wf.statistics()
+        except PegasusClientError as e:
+            print(e)
+
+    # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
-    def create_pegasus_properties(self):
+    def create_pegasus_properties(self, hosted_site_catalog=None):
         self.props = Properties()
         self.props["pegasus.transfer.threads"] = "16"
+        if hosted_site_catalog:
+            # Use one of Pegasus' centrally hosted site catalogs instead of
+            # a locally generated one. pegasus-plan downloads and caches the
+            # named file from the catalog repository at plan time.
+            # https://pegasus.isi.edu/documentation/reference-guide/catalogs.html#centrally-hosted-site-catalogs
+            self.props["pegasus.catalog.site.repo.file"] = hosted_site_catalog
 
     # ------------------------------------------------------------------
     # Site Catalog
+    #
+    # Not used by the CLI below by default — pegasus-plan resolves the site
+    # catalog from a centrally hosted one instead (see -s/--hosted-site-catalog
+    # and create_pegasus_properties above). Kept for programmatic/notebook use
+    # when a self-contained, locally generated HTCondor site catalog is wanted.
     # ------------------------------------------------------------------
-    def create_sites_catalog(self, exec_site_name="condorpool"):
+    def create_sites_catalog(self, exec_site_name="compute"):
         self.sc = SiteCatalog()
 
         local = Site("local").add_directories(
@@ -193,14 +251,31 @@ class RnaseqWorkflow:
     # ------------------------------------------------------------------
     # Transformation Catalog
     # ------------------------------------------------------------------
-    def create_transformation_catalog(self, exec_site_name="condorpool"):
+    def create_transformation_catalog(
+        self,
+        exec_site_name="compute",
+        container_sif="Apptainer/RNASeq_Container.sif",
+    ):
         self.tc = TransformationCatalog()
 
+        # A local Apptainer .sif built with `apptainer build`. Pegasus stages
+        # the file like any other input, so image_site is the site where the
+        # .sif physically lives (the submit host = "local").
+        sif_path = (
+            container_sif
+            if os.path.isabs(container_sif)
+            else os.path.join(self.wf_dir, container_sif)
+        )
+        if not os.path.exists(sif_path):
+            logger.warning(
+                "Apptainer image not found at %s — build it first with: "
+                "apptainer build %s Apptainer/RNASeq_Container.def",
+                sif_path, sif_path)
         container = Container(
             "rnaseq_container",
             container_type=Container.SINGULARITY,
-            image="docker://kthare10/rnaseq-workflow:latest",
-            image_site="docker_hub",
+            image="file://" + sif_path,
+            image_site="local",
         )
 
         transformations = []
@@ -316,9 +391,7 @@ class RnaseqWorkflow:
 
         bwa_index_job = (
             Job("bwa_index", _id="bwa_index", node_label="bwa_index")
-            .add_args(
-                f"--reference {ref_genome_file.lfn}"
-            )
+            .add_args("--reference", ref_genome_file.lfn)
             .add_inputs(ref_genome_file)
             .add_outputs(
                 *bwa_idx_files, stage_out=False, register_replica=False
@@ -351,19 +424,19 @@ class RnaseqWorkflow:
                 trimmed2 = None
             fastp_html = File(f"fastp_qc/{sample_id}_fastp.html")
 
-            fastp_args = (
-                f"--read1 {read1_file.lfn} "
-                f"--out1 {trimmed1.lfn} "
-                f"--html {fastp_html.lfn} "
-                f"--threads {TOOL_CONFIGS['fastp']['cores']}"
-            )
+            fastp_args = [
+                "--read1", read1_file.lfn,
+                "--out1", trimmed1.lfn,
+                "--html", fastp_html.lfn,
+                "--threads", str(TOOL_CONFIGS['fastp']['cores']),
+            ]
             fastp_inputs = [read1_file]
 
             if is_paired:
-                fastp_args += (
-                    f" --read2 {read2_file.lfn} "
-                    f"--out2 {trimmed2.lfn}"
-                )
+                fastp_args += [
+                    "--read2", read2_file.lfn,
+                    "--out2", trimmed2.lfn,
+                ]
                 fastp_inputs.append(read2_file)
 
             fastp_job = (
@@ -372,7 +445,7 @@ class RnaseqWorkflow:
                     _id=f"fastp_{sample_id}",
                     node_label=f"fastp_{sample_id}",
                 )
-                .add_args(fastp_args)
+                .add_args(*fastp_args)
                 .add_inputs(*fastp_inputs)
                 .add_outputs(
                     fastp_html, stage_out=True, register_replica=False
@@ -396,16 +469,16 @@ class RnaseqWorkflow:
             all_bai_files.append(bai_file)
             all_count_files.append(counts_file)
 
-            bwa_args = (
-                f"--read1 {trimmed1.lfn} "
-                f"--output-bam {bam_file.lfn} "
-                f"--output-bai {bai_file.lfn} "
-                f"--output-counts {counts_file.lfn} "
-                f"--threads {TOOL_CONFIGS['bwa_align']['cores']}"
-            )
+            bwa_args = [
+                "--read1", trimmed1.lfn,
+                "--output-bam", bam_file.lfn,
+                "--output-bai", bai_file.lfn,
+                "--output-counts", counts_file.lfn,
+                "--threads", str(TOOL_CONFIGS['bwa_align']['cores']),
+            ]
             bwa_inputs = [trimmed1] + bwa_idx_files
             if is_paired:
-                bwa_args += f" --read2 {trimmed2.lfn}"
+                bwa_args += ["--read2", trimmed2.lfn]
                 bwa_inputs.append(trimmed2)
 
             bwa_job = (
@@ -414,7 +487,7 @@ class RnaseqWorkflow:
                     _id=f"bwa_{sample_id}",
                     node_label=f"bwa_{sample_id}",
                 )
-                .add_args(bwa_args)
+                .add_args(*bwa_args)
                 .add_inputs(*bwa_inputs)
                 .add_outputs(
                     bam_file, stage_out=True, register_replica=False
@@ -438,9 +511,9 @@ class RnaseqWorkflow:
                     node_label=f"bw_{sample_id}",
                 )
                 .add_args(
-                    f"--input-bam {bam_file.lfn} "
-                    f"--output {bw_file.lfn} "
-                    f"--threads {TOOL_CONFIGS['bam2bigwig']['cores']}"
+                    "--input-bam", bam_file.lfn,
+                    "--output", bw_file.lfn,
+                    "--threads", str(TOOL_CONFIGS['bam2bigwig']['cores']),
                 )
                 .add_inputs(bam_file, bai_file)
                 .add_outputs(
@@ -463,12 +536,8 @@ class RnaseqWorkflow:
         )
 
         # Build --bam and --bai args for symlinking in wrapper
-        bam_args = " ".join(
-            [f"--bam {f.lfn}" for f in all_bam_files]
-        )
-        bai_args = " ".join(
-            [f"--bai {f.lfn}" for f in all_bai_files]
-        )
+        bam_args = [tok for f in all_bam_files for tok in ("--bam", f.lfn)]
+        bai_args = [tok for f in all_bai_files for tok in ("--bai", f.lfn)]
 
         count_reads_job = (
             Job(
@@ -477,10 +546,10 @@ class RnaseqWorkflow:
                 node_label="count_reads",
             )
             .add_args(
-                f"--metadata sample_metadata.tsv "
-                f"--gff {ref_ann_file.lfn} "
-                f"--threads {TOOL_CONFIGS['count_reads']['cores']} "
-                + bam_args + " " + bai_args
+                "--metadata", "sample_metadata.tsv",
+                "--gff", ref_ann_file.lfn,
+                "--threads", str(TOOL_CONFIGS['count_reads']['cores']),
+                *bam_args, *bai_args,
             )
             .add_inputs(
                 metadata_file,
@@ -510,7 +579,7 @@ class RnaseqWorkflow:
                 _id="tmm_normalise",
                 node_label="tmm_normalise",
             )
-            .add_args("--log-transform TRUE")
+            .add_args("--log-transform", "TRUE")
             .add_inputs(gene_counts_out, ref_gene_df_out, tmm_normalise_r)
             .add_outputs(
                 cpm_counts_out, rpkm_counts_out,
@@ -554,8 +623,8 @@ class RnaseqWorkflow:
             diffexpr_job = (
                 Job("diffexpr", _id="diffexpr", node_label="diffexpr")
                 .add_args(
-                    f"--p-threshold {self.args.p_thresh} "
-                    f"--l2fc-threshold {self.args.l2fc_thresh}"
+                    "--p-threshold", str(self.args.p_thresh),
+                    "--l2fc-threshold", str(self.args.l2fc_thresh),
                 )
                 .add_inputs(
                     gene_counts_out,
@@ -579,7 +648,8 @@ class RnaseqWorkflow:
 # ======================================================================
 # main()
 # ======================================================================
-def main():
+def build_parser():
+    """The CLI's argument parser (also used by the notebook)."""
     parser = argparse.ArgumentParser(
         description="Pegasus RNA-Seq Workflow Generator "
         "(converted from chienlab-rnaseq Nextflow pipeline)",
@@ -589,23 +659,35 @@ Examples:
   %(prog)s --sample-file samples.tsv --ref-genome ref.fasta --ref-ann ref.gff
   %(prog)s --sample-file samples.tsv --ref-genome ref.fasta --ref-ann ref.gff \\
            --contrast-table contrasts.tsv --data-dir /path/to/fastq/
+  %(prog)s ... -s access-pegasus.yml     # a hosted site catalog
+  %(prog)s ... -e condorpool             # plain HTCondor pool, no site catalog
+
+Writes the workflow and its catalogs; it does not plan or submit. Plan with
+the command it prints, or from RNASeq-Workflow.ipynb (plan_submit()).
 """,
     )
 
     # Standard Pegasus arguments
     parser.add_argument(
         "-s",
-        "--skip-sites-catalog",
-        action="store_true",
-        help="Skip site catalog creation",
+        "--hosted-site-catalog",
+        metavar="FILE",
+        type=str,
+        default=None,
+        help="Name of a Pegasus centrally hosted site catalog to plan against "
+        "(e.g. access-pegasus.yml), instead of a locally generated one. Sets "
+        "pegasus.catalog.site.repo.file; see "
+        "https://pegasus.isi.edu/documentation/reference-guide/catalogs.html"
+        "#centrally-hosted-site-catalogs",
     )
     parser.add_argument(
         "-e",
         "--execution-site-name",
         metavar="STR",
         type=str,
-        default="condorpool",
-        help="Execution site name (default: condorpool)",
+        default="compute",
+        help="Execution site name (default: compute; use condorpool on a "
+        "plain HTCondor pool with no site catalog)",
     )
     parser.add_argument(
         "-o",
@@ -661,8 +743,19 @@ Examples:
         default=1.0,
         help="Log2 fold change threshold for DE (default: 1.0)",
     )
+    parser.add_argument(
+        "--container-sif",
+        type=str,
+        default="Apptainer/RNASeq_Container.sif",
+        help="Path to the Apptainer .sif image, absolute or relative to the "
+             "workflow directory (default: Apptainer/RNASeq_Container.sif)",
+    )
 
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
 
     # Validation
     if not os.path.exists(args.sample_file):
@@ -684,6 +777,9 @@ Examples:
     logger.info(f"Data directory: {args.data_dir or '(none)'}")
     logger.info(f"Contrast table: {args.contrast_table or '(none)'}")
     logger.info(f"Execution site: {args.execution_site_name}")
+    logger.info(
+        f"Hosted site catalog: {args.hosted_site_catalog or '(none — supply your own site catalog)'}"
+    )
     logger.info(f"Output file:    {args.output}")
     logger.info("=" * 70)
 
@@ -702,24 +798,24 @@ Examples:
             for c in workflow.contrasts:
                 logger.info(f"  {c['group1']} vs {c['group2']}")
 
-        workflow.create_pegasus_properties()
-
-        if not args.skip_sites_catalog:
-            workflow.create_sites_catalog(
-                exec_site_name=args.execution_site_name
-            )
-
+        workflow.create_pegasus_properties(
+            hosted_site_catalog=args.hosted_site_catalog
+        )
         workflow.create_transformation_catalog(
-            exec_site_name=args.execution_site_name
+            exec_site_name=args.execution_site_name,
+            container_sif=args.container_sif,
         )
         workflow.create_replica_catalog()
         workflow.create_workflow()
         workflow.write()
 
         logger.info(f"\nWorkflow written to {args.output}")
+        # --output-dir: no site catalog defines "local", so Pegasus's built-in local
+        # site would otherwise stage outputs to ./wf-output.
         logger.info(
-            f"Submit: pegasus-plan --submit "
-            f"-s {args.execution_site_name} -o local {args.output}"
+            f"Plan and submit: pegasus-plan --dir submit "
+            f"-s {args.execution_site_name} -o local "
+            f"--output-dir {workflow.local_storage_dir} --submit {args.output}"
         )
 
     except Exception as e:

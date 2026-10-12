@@ -82,7 +82,7 @@ class interactively and submits from an explicit cell.
 ### Plan and Submit
 
 ```bash
-pegasus-plan --dir submit -s compute -o local --submit workflow.yml
+pegasus-plan --dir submit -s compute -o local --output-dir "$PWD/output" --submit workflow.yml
 ```
 
 ### Monitor Workflow

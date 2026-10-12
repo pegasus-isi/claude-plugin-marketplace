@@ -86,6 +86,9 @@ class MyWorkflow:
                 dir="submit",
                 sites=[exec_site_name],
                 output_sites=["local"],
+                # Outputs in output/ even when no catalog defines "local"
+                # (a hosted catalog), where Pegasus would use ./wf-output.
+                output_dir=self.local_storage_dir,
                 cleanup="none",
                 verbose=1,
                 submit=True,
@@ -443,9 +446,12 @@ the command it prints, or from the notebook (plan_submit()).
         workflow.write()
 
         logger.info(f"\nWorkflow written to {args.output}")
+        # --output-dir: with no site catalog defining "local", Pegasus's
+        # built-in local site would stage outputs to ./wf-output instead.
         logger.info(
             f"Plan and submit: pegasus-plan --dir submit "
-            f"-s {args.execution_site_name} -o local --submit {args.output}"
+            f"-s {args.execution_site_name} -o local "
+            f"--output-dir {workflow.local_storage_dir} --submit {args.output}"
         )
 
     except Exception as e:
