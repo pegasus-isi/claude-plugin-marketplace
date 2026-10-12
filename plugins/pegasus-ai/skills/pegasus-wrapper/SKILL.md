@@ -85,7 +85,8 @@ Start from `assets/templates/wrapper_template.py` and customize:
 4. **Tool invocation**: Use `subprocess.run()` for CLI tools, or call Python libraries directly
 5. **Exit code propagation**: `sys.exit(result.returncode)` after subprocess
 6. **Structured logging**: Use `logging` module with `logger.info()` for inputs, commands, and results
-7. **Output verification**: Check the output file exists before exiting
+7. **Output verification**: Check the output file exists before exiting — and report a missing one through `fail()`, never a bare `sys.exit(1)`
+8. **Declared outputs on every exit path**: set `DECLARED_OUTPUTS` to every file the job's `add_outputs()` declares; exit early only through `fail()`; keep the template's `try/except` around `main()`
 
 ### For shell wrappers:
 
@@ -96,6 +97,7 @@ Start from `assets/templates/wrapper_template.sh` and customize:
 3. **Tool execution**: Call the tool with parsed arguments
 4. **Output flattening**: Copy expected output files from nested directories to the working directory root
 5. **Headless handling** (if needed): `unset DISPLAY`, `xvfb-run` fallback
+6. **Declared outputs**: set `DECLARED_OUTPUTS` to every file the job declares; the template's `EXIT` trap leaves them behind on failure
 
 ### Critical Rules
 
@@ -104,7 +106,9 @@ Start from `assets/templates/wrapper_template.sh` and customize:
 3. **Support files via `os.getcwd()`**: If the wrapper needs a support file (R script, JAR), find it with `os.path.join(os.getcwd(), "filename")` — NOT relative to `__file__`.
 4. **Create subdirectories**: Any output path containing `/` needs `os.makedirs(os.path.dirname(output), exist_ok=True)`.
 5. **Print the command**: Always log the command being run — this is essential for debugging via `pegasus-analyzer`.
-6. **Test it inside the container**: `apptainer exec Apptainer/{Name}_Container.sif python3 bin/{step}.py --help`, then on a small input. Never `pip install` the wrapper's libraries into the host interpreter (system or `--user`) to try it there: the job runs in the image, not on the host, and the packages left behind shadow whatever else was installed against that interpreter. `python3 -m py_compile` is the most a host check should do before the image exists.
+6. **Never exit non-zero with a declared output missing.** This applies to *every* step, not only API fetches. HTCondor copies a job's declared outputs back *before* Pegasus checks the exit code; if one is missing the job is **held** ("Transfer output files failure … No such file or directory"), its stdout/stderr never return, and the run hangs until the hold times out. Exit early only through the template's `fail()` (Python) or under its `EXIT` trap (shell), which leave an empty file at each missing output so the job *fails* with its error visible. A validation check, a `json.loads`, an empty-data guard or a crashed tool before the outputs are written all count. (Seen in practice: a report step that validated its inputs with `sys.exit(1)` before writing `metrics.json` was held with no error to read.)
+7. **Pass identifiers, not prose, as arguments.** Anything with spaces, quotes or JSON in `add_args()` crosses `pegasus-plan` → the job's `.sh` → bash → `pegasus-kickstart` → the container, and is easy to split or mangle on the way (gauge names like "Missouri at Hermann" arrived as three arguments). Pass IDs or slugs on the command line; put display names, mappings and configuration in a small JSON/CSV **input file** registered in the Replica Catalog and declared with `add_inputs()`.
+8. **Test it inside the container**: `apptainer exec Apptainer/{Name}_Container.sif python3 bin/{step}.py --help`, then on a small input. Never `pip install` the wrapper's libraries into the host interpreter (system or `--user`) to try it there: the job runs in the image, not on the host, and the packages left behind shadow whatever else was installed against that interpreter. `python3 -m py_compile` is the most a host check should do before the image exists.
 
 ## Step 5: Show Integration
 

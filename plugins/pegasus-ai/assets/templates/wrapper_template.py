@@ -7,6 +7,9 @@ This wrapper script is invoked by Pegasus as a job. It:
 2. Creates output directories as needed
 3. Runs the underlying tool via subprocess (or calls a Python library directly)
 4. Propagates exit codes so Pegasus can detect failures
+5. On ANY failure, leaves an empty file at every declared output before
+   exiting non-zero (see fail() below) — otherwise HTCondor HOLDS the job
+   instead of failing it, and the error message is lost
 
 References:
   - tnseq-workflow/bin/clip.py — subprocess wrapper calling a Java tool
@@ -25,6 +28,41 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Every file this job declares with add_outputs() in workflow_generator.py.
+# Set right after parsing arguments, so fail() and the crash handler at the
+# bottom know what to leave behind.
+DECLARED_OUTPUTS: list[str] = []
+
+
+def leave_empty_outputs() -> None:
+    """Create an empty file at each declared output that does not exist.
+
+    HTCondor transfers a job's declared outputs back *before* Pegasus looks at
+    the exit code. If one is missing, the transfer fails and the job is HELD
+    ("Transfer output files failure … No such file or directory"), its stdout
+    and stderr never come back, and the run hangs until the hold times out.
+    With an empty file in place the transfer succeeds, the non-zero exit marks
+    the job failed, and pegasus-analyzer shows the real error. The empty file is
+    never staged out: a failed job's outputs are not used.
+    """
+    for path in DECLARED_OUTPUTS:
+        if path and not os.path.exists(path):
+            out_dir = os.path.dirname(path)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
+            open(path, "a").close()
+
+
+def fail(message: str, code: int = 1) -> None:
+    """Report an error and exit non-zero — the only way this script exits early.
+
+    Use it instead of a bare sys.exit(1) anywhere before the outputs are
+    written (argument checks, missing inputs, empty data, a failed tool).
+    """
+    logger.error(message)
+    leave_empty_outputs()
+    sys.exit(code)
 
 
 def main():
@@ -45,6 +83,13 @@ def main():
     # parser.add_argument("--start-date", required=True, help="Start date")
 
     args = parser.parse_args()
+
+    # [CUSTOMIZE] List EVERY output the generator declares for this job.
+    DECLARED_OUTPUTS.extend([args.output])
+
+    # Validate before doing work — and fail through fail(), never sys.exit():
+    # if not os.path.isfile(args.input):
+    #     fail(f"Input not found: {args.input}")
 
     # Log inputs for debugging via pegasus-analyzer
     logger.info(f"Input: {args.input}")
@@ -73,7 +118,7 @@ def main():
     print(result.stdout)
     if result.returncode != 0:
         print(result.stderr, file=sys.stderr)
-        sys.exit(result.returncode)
+        fail(f"mytool exited {result.returncode}", result.returncode)
 
     # --- Pattern B: shell command with pipes ---
     # (See tnseq-workflow/bin/genomecov.py)
@@ -101,13 +146,26 @@ def main():
     # (See tnseq-workflow/bin/clip.py — je_jar, tab_generate.py — tab.R)
     # script_path = os.path.join(os.getcwd(), "analysis.R")
 
-    # Verify output was created
+    # Verify output was created. fail(), not sys.exit(1): exiting with the
+    # output missing is exactly what makes HTCondor hold the job.
     if not os.path.exists(args.output):
-        logger.error(f"Expected output not found: {args.output}")
-        sys.exit(1)
+        fail(f"Expected output not found: {args.output}")
 
     logger.info(f"Output: {args.output}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit as e:
+        # Any stray sys.exit() lands here too. An argparse error does as well,
+        # but before DECLARED_OUTPUTS is known, so it still holds the job:
+        # keep this script's flags in step with the generator's add_args().
+        if e.code not in (0, None):
+            leave_empty_outputs()
+        raise
+    except Exception:
+        # An unexpected crash: log the traceback, leave the outputs, fail.
+        logger.exception("Step failed")
+        leave_empty_outputs()
+        sys.exit(1)

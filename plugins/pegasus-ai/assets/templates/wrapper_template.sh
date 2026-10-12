@@ -52,6 +52,27 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ------------------------------------------------------------------
+# Declared outputs: leave them behind on ANY failure
+# ------------------------------------------------------------------
+# HTCondor transfers a job's declared outputs back before Pegasus sees the
+# exit code. A missing one makes the transfer fail and the job is HELD (no
+# stdout/stderr, the run hangs until the hold times out). On a non-zero exit
+# this trap creates an empty file for each missing output, so the job FAILS
+# instead and the real error is visible. Failed jobs' outputs are never used.
+# [CUSTOMIZE] List EVERY file the generator declares with add_outputs().
+DECLARED_OUTPUTS=("${SAMPLE}_output.txt")
+leave_empty_outputs() {
+    local rc=$?
+    if [[ $rc -ne 0 ]]; then
+        for f in "${DECLARED_OUTPUTS[@]}"; do
+            [[ -e "$f" ]] || { mkdir -p "$(dirname "$f")"; : > "$f"; }
+        done
+    fi
+    exit $rc
+}
+trap leave_empty_outputs EXIT
+
+# ------------------------------------------------------------------
 # [CUSTOMIZE] Headless mode for GUI tools (FastQC, QUAST)
 # ------------------------------------------------------------------
 # unset DISPLAY
