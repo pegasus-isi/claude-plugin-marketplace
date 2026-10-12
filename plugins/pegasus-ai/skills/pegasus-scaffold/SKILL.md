@@ -136,6 +136,9 @@ Key rules:
 - File objects must be shared between producer and consumer jobs (same Python object, not just same string)
 - For fan-in merge steps, collect output files in a list and pass to a merge job via `add_inputs(*files)`
 - For external data directories (caches, databases), use CondorIO `transfer_input_files` on the Transformation — do NOT use container `mounts=[]`. Pass `os.path.basename()` of the directory to wrapper scripts.
+- `add_args()` carries identifiers, not prose: no values with spaces, quotes or JSON (they are split or mangled between `pegasus-plan`, the job's `.sh`, bash, kickstart and the container). Put names, mappings and settings in a small JSON/CSV file, register it in the Replica Catalog and `add_inputs()` it.
+- Keep the execution-site option named exactly `-e/--execution-site-name`: tools that run the generator (Pegasus AI Studio) set it to match the plan's `-s`.
+- An HTML report is written self-contained (e.g. Plotly `include_plotlyjs=True`, images inlined), so it opens as one file wherever it is previewed.
 
 Four errors that each shipped in a real generated workflow, every one in a
 generator written freehand instead of from the template. The template already
@@ -183,6 +186,7 @@ Start from `assets/templates/wrapper_template.py` and customize:
 3. **Tool invocation**: Use `subprocess.run()` for CLI tools, or call Python libraries directly
 4. **Exit code propagation**: `sys.exit(result.returncode)` after subprocess calls
 5. **Logging**: Print the command being run for debugging
+6. **Declared outputs on every exit path**: list every `add_outputs()` file in `DECLARED_OUTPUTS` and exit early only through `fail()` — a step that exits non-zero with an output missing is *held* by HTCondor, not failed, and its error never comes back (see `pegasus-wrapper`)
 
 For fan-in merge wrappers, use `action="append"` or `nargs="+"` for the input argument.
 

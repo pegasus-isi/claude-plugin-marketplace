@@ -1071,6 +1071,15 @@ analyze_job = (
 )
 ```
 
+**Every job: never exit non-zero with a declared output missing.** HTCondor
+copies declared outputs back before Pegasus checks the exit code; a missing one
+makes the job **held** ("Transfer output files failure … No such file or
+directory"), not failed, and its stdout/stderr never return. Wrappers built from
+`assets/templates/wrapper_template.{py,sh}` route every early exit through
+`fail()` / an `EXIT` trap that leaves an empty file at each missing output, so
+the job fails with its real error visible. The fetch-specific advice below is a
+case of this rule.
+
 **Best practices for API-fetching jobs:**
 
 ```python

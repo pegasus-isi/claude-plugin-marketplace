@@ -78,6 +78,8 @@ For each wrapper script, verify:
 - [ ] Shell wrappers use `set -euo pipefail`
 - [ ] Shell wrappers that flatten nested output copy the right files to the working directory
 - [ ] Fan-in wrappers accept multiple inputs via `action="append"` or `nargs="+"` (not directory scanning)
+- [ ] **ERROR** No exit path leaves a declared output missing: every early exit (argument/validation checks, empty data, `json.loads`, a failed tool) goes through `fail()` / the shell `EXIT` trap, and `DECLARED_OUTPUTS` lists every file the job's `add_outputs()` declares. A bare `sys.exit(1)` before the outputs exist makes HTCondor **hold** the job ("Transfer output files failure") with no stderr to read
+- [ ] **WARNING** `add_args()` passes no free text: no values with spaces, quotes or JSON. Names and mappings go in an input file (Replica Catalog + `add_inputs()`)
 
 ### Category 6: Resource Configuration
 
@@ -116,6 +118,7 @@ hosted one (`-s FILE` or `~/.pegasusrc`) — never to the generator:
 - [ ] **ERROR** No scheduler details in the workflow: no `--queue`/`--project`/`--site-style` options, no ClassAd `requirements`, `+Attribute`s, partitions, accounts or GPU model/VRAM constraints. GPU jobs carry the catalogs' `gpu` tag (`add_profiles(Namespace.PEGASUS, key="tag", value="gpu")`)
 - [ ] **ERROR** Transformations are registered on `exec_site_name` (the `-e` value), so they resolve on whatever site the plan uses
 - [ ] **SUGGESTION** A tool that runs longer than a batch catalog's default wall-clock (Unity: 2 h) states its own `runtime`
+- [ ] **WARNING** The site option is named exactly `-e/--execution-site-name` (Pegasus AI Studio sets it from its "Where it runs" choice so it matches the plan's `-s`)
 
 ## Step 3: Generate Report
 
