@@ -292,15 +292,21 @@ The checklist above is you reading your own code, which is exactly the state of
 mind that wrote the bug. Finish by having the planner read it instead:
 
 The CLI writes the workflow and catalogs but never submits, so plan it
-without `--submit`. With no site catalog configured, generate for Pegasus's
-built-in `condorpool` site (it needs no catalog at all):
+without `--submit`. Plan for the site the user's real run will use, not for
+`condorpool` by habit: when `~/.pegasusrc` names a site catalog, that site is
+`compute` (every hosted catalog, and a cluster's own, calls it that), and on
+such a cluster `condorpool` may have no machines at all, so a plan for it
+proves nothing about the run. Only with no catalog named is it Pegasus's
+built-in `condorpool`, which needs no catalog:
 
 ```bash
-python3 workflow_generator.py <args> -e condorpool     # writes workflow.yml + the catalogs
-pegasus-plan --dir submit --sites condorpool --output-sites local workflow.yml
+SITE=$(grep -qs '^pegasus\.catalog\.site\.repo\.file' ~/.pegasusrc && echo compute || echo condorpool)
+python3 workflow_generator.py <args> -e "$SITE"        # writes workflow.yml + the catalogs
+pegasus-plan --dir submit --sites "$SITE" --output-sites local workflow.yml
 ```
 
-To check the default `compute` against a hosted catalog too, generate with
+`-e` and `--sites` must be the same name. When you report the plan, say which
+site it was for. To check against another hosted catalog too, generate with
 `-s access-pegasus.yml` (or `unity.yml`, ...) and plan with `--sites compute`.
 
 Planning is local, takes seconds, needs no container built and no pool running.
