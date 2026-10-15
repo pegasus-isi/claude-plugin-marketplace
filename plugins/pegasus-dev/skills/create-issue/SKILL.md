@@ -19,7 +19,9 @@ Default `<base>` = `main`; if the user passed `--base <branch>` or named a targe
    AskUserQuestion. Blank issues are disabled (`config.yml`), so always use a template:
    - **Bug** → template `.github/ISSUE_TEMPLATE/bug_report.md`; ensure label `bug`.
    - **Feature** → template `.github/ISSUE_TEMPLATE/feature_request.md`.
-   - **Task / other** → no template; a concise body is fine.
+   - **Task** → template `.github/ISSUE_TEMPLATE/task.md`.
+   - **Improvement** → template `.github/ISSUE_TEMPLATE/improvement.md`.
+   - **other** → no template; a concise body is fine.
 2. **Build the body from the template.** `Read` the chosen template file, strip its YAML
    frontmatter, and use its section headings as the body skeleton — replace each placeholder with
    real content from the request. For any **required** section you can't fill, ask the user.
@@ -45,7 +47,7 @@ Default `<base>` = `main`; if the user passed `--base <branch>` or named a targe
    `updateIssue(issueTypeId:)` mutation, or tell the user to set it in the UI.
 5. Capture the new issue number `<n>` from the create output.
 6. **Create the issue-linked branch** off `<base>` (populates the Development field) — do **not**
-   check it out. `<type>` = lowercased issue type (Feature→`feature`, Bug→`bug`, Task→`task`);
+   check it out. `<type>` = lowercased issue type (Feature→`feature`, Bug→`bug`, Task→`task`, , Improvement→`improvement`);
    `<slug>` = kebab-cased title. Branch name `<branch>`:
    - base = `main` → `<type>/<n>-<slug>`
    - base ≠ `main` → `<type>/<base>/<n>-<slug>` (e.g. `feature/5.1/1234-add-retry`)
